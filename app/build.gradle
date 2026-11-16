@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+def appVersion = new groovy.json.JsonSlurper().parse(file('../version.json'))
+def appMetadata = new groovy.json.JsonSlurper().parse(file('../mobile-app.json'))
+def localUpdateManifestUrl = providers.gradleProperty('maUpdateManifestUrl').getOrElse('')
+def escapedUpdateManifestUrl = localUpdateManifestUrl.replace('\\', '\\\\').replace('"', '\\"')
+def githubUpdateRepository = (appMetadata.update_repository ?: '').toString()
+def escapedGithubUpdateRepository = githubUpdateRepository.replace('\\', '\\\\').replace('"', '\\"')
+
+android {
+    namespace 'com.siny.mobilebasic'
+    compileSdk 37
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    defaultConfig {
+        applicationId 'com.siny.apps.ma_3c44c3e1b8'
+        minSdk 26
+        targetSdk 35
+        versionCode appVersion.version_code as int
+        versionName appVersion.version as String
+        buildConfigField 'String', 'LOCAL_UPDATE_MANIFEST_URL', '"' + escapedUpdateManifestUrl + '"'
+        buildConfigField 'String', 'GITHUB_UPDATE_REPOSITORY', '"' + escapedGithubUpdateRepository + '"'
+        testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20250517'
+}
+
+tasks.withType(Test).configureEach {
+    workingDir rootProject.projectDir
+}

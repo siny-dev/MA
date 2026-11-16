@@ -1,0 +1,14 @@
+{
+    "schema":  1,
+    "app_name":  "MA",
+    "app_id":  "ma-3c44c3e1b8",
+    "application_id":  "com.siny.apps.ma_3c44c3e1b8",
+    "platform":  "android",
+    "modules":  [
+                    "AutoUpdate/1",
+                    "AutoSync/1"
+                ],
+    "update_repository":  "siny-dev/MA",
+    "update_manifest_url":  "",
+    "autosync_server_url":  ""
+}

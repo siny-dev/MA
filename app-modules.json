@@ -1,0 +1,15 @@
+{
+    "schema":  1,
+    "contract":  "autoupdate-app-modules-v1",
+    "app_id":  "ma-3c44c3e1b8",
+    "modules":  [
+                    {
+                        "module_id":  "AutoUpdate",
+                        "api_major":  1
+                    },
+                    {
+                        "module_id":  "AutoSync",
+                        "api_major":  1
+                    }
+                ]
+}
