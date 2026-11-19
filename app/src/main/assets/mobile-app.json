@@ -1,16 +1,16 @@
 {
-    "schema":  1,
-    "app_name":  "MA",
-    "app_id":  "ma-3c44c3e1b8",
-    "application_id":  "com.doumi.helper",
-    "signing_certificate_sha256":  "5f5951336912c1c8772c96fccc88799ba96beba2488fe3296d22c23469da8987",
-    "platform":  "android",
-    "modules":  [
-                    "AutoUpdate/1",
-                    "AutoSync/1"
-                ],
-    "update_repository":  "siny-dev/MA",
-    "update_repository_public":  true,
-    "update_manifest_url":  "",
-    "autosync_server_url":  ""
+    "schema": 1,
+    "app_name": "MA",
+    "app_id": "ma-3c44c3e1b8",
+    "application_id": "com.siny.apps.ma_3c44c3e1b8",
+    "signing_certificate_sha256": "d2206ba8af559c091b82d7dd65e16f597629c361c623f93f0da10a5a43c84679",
+    "platform": "android",
+    "modules": [
+        "AutoUpdate/1",
+        "AutoSync/1"
+    ],
+    "update_repository": "siny-dev/MA",
+    "update_repository_public": true,
+    "update_manifest_url": "",
+    "autosync_server_url": ""
 }
