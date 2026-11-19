@@ -32,3 +32,23 @@ The root cause starts at **1.0.006**, immediately after the last known-good 1.0.
 - Regression check: v1.0.020 passes; archived unsigned v1.0.019 is rejected by the signature gate.
 - Verification performed: `python -m py_compile tools/autoupdate/publish-github-release.py` passed; `python build/diagnosis/test_release_gate.py` passed both assertions; `python tools/autoupdate/publish-github-release.py --verify-only` passed against the public v1.0.020 release and confirmed it remains latest.
 - This patch changes release verification only; it does not create or publish another APK.
+
+### Compatibility bridge patch — v1.0.21 candidate
+
+**What changed:**
+
+- Restored MA's last known-good Android package ID, `com.doumi.helper`, in the app metadata and packaged metadata. The 1.0.006 release changed this to `com.siny.apps.ma_3c44c3e1b8`, which made it a different Android app.
+- Restored the original 1.0.005 signing certificate for the release build and raised Android `versionCode` from 1006 to 1007. The bridge's displayed version is 1.0.21.
+- Changed the release publisher to build a signed release APK, pin the signing certificate by package identity, and record the signer digest in the release manifest.
+- Updated the module-contract and local-feed checks for the restored package ID.
+- Added PC-only compatibility checks against the actual 1.0.005 APK and the archived 1.0.005 `UpdatePolicy.java`, plus a generated old-channel `latest.json` using the exact historical six-field schema.
+
+**Verification performed:**
+
+- `:app:testDebugUnitTest` and `assembleRelease`: passed.
+- APK identity comparison: 1.0.005 (`com.doumi.helper`, code 1006, signer `5f5951…`) → candidate 1.0.21 (same package, code 1007, same signer): passed.
+- Historical 1.0.005 `UpdatePolicy` Java checks: matching package, higher version code, tag, actual APK SHA/size, and signer accepted; a reset version code, mismatched tag, and changed signer were rejected.
+- Historical `latest.json` field schema: exact match.
+- Candidate APK: 1,241,269 bytes; SHA-256 `1d1fa360cc8fc0f639ec3790d9ffee10afc6d234b9bcb92a342e2273d8f03634`.
+
+**Status:** Local artifact and legacy policy checks pass. Remote GitHub release and old-channel version pointer have not yet been published; no phone installation is claimed by this entry.

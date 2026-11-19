@@ -26,7 +26,11 @@ APKSIGNER_JAR = ANDROID_HOME / "build-tools" / "36.0.0" / "lib" / "apksigner.jar
 AAPT = ANDROID_HOME / "build-tools" / "36.0.0" / "aapt.exe"
 API_ROOT = f"https://api.github.com/repos/{REPOSITORY}"
 USER_AGENT = "MA-GitHub-Release/1"
-EXPECTED_SIGNER_SHA256 = "d2206ba8af559c091b82d7dd65e16f597629c361c623f93f0da10a5a43c84679"
+PINNED_SIGNERS = {
+    "com.doumi.helper": "5f5951336912c1c8772c96fccc88799ba96beba2488fe3296d22c23469da8987",
+    "com.siny.apps.ma_3c44c3e1b8": "d2206ba8af559c091b82d7dd65e16f597629c361c623f93f0da10a5a43c84679",
+}
+LOCAL_SIGNING_CONFIG = ROOT / "build" / "signing.local.json"
 
 
 class GitHubError(RuntimeError):
@@ -116,9 +120,27 @@ def run_build():
             "PATH": f"{JAVA_HOME / 'bin'};{ANDROID_HOME / 'platform-tools'};{os.environ.get('PATH', '')}",
         }
     )
+    if not LOCAL_SIGNING_CONFIG.is_file():
+        raise GitHubError("기존 MA 서명 설정이 없습니다. build/signing.local.json을 준비하세요.")
+    try:
+        signing = json.loads(LOCAL_SIGNING_CONFIG.read_text(encoding="utf-8"))
+        keystore = Path(signing["keystore"])
+        password_file = Path(signing["password_file"])
+        alias = str(signing["key_alias"])
+        password = password_file.read_text(encoding="utf-8-sig").strip()
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        raise GitHubError("기존 MA 서명 설정을 읽지 못했습니다.") from None
+    if not keystore.is_file() or not password or not alias:
+        raise GitHubError("기존 MA 서명 키 파일, 암호 파일 또는 별칭이 올바르지 않습니다.")
+    env.update({
+        "MA_LEGACY_KEYSTORE": str(keystore),
+        "MA_LEGACY_KEY_ALIAS": alias,
+        "MA_LEGACY_STORE_PASSWORD": password,
+        "MA_LEGACY_KEY_PASSWORD": password,
+    })
     gradle = ROOT / "gradlew.bat"
     result = subprocess.run(
-        f'"{gradle}" testDebugUnitTest assembleDebug',
+        f'"{gradle}" testDebugUnitTest assembleRelease',
         cwd=ROOT,
         env=env,
         check=False,
@@ -128,9 +150,29 @@ def run_build():
         raise GitHubError(f"MA 테스트/빌드 실패 (exit {result.returncode})")
 
 
-def verify_local_apk_signature(apk_path: Path):
+def expected_signer_for_package(package_name: str) -> str:
+    signer = PINNED_SIGNERS.get(package_name)
+    if not signer:
+        raise GitHubError("릴리스 APK의 패키지에 등록된 MA 서명 인증서가 없습니다.")
+    return signer
+
+
+def verify_local_apk_signature(apk_path: Path, expected_signer_sha256: str | None = None):
     if not APKSIGNER_JAR.is_file():
         raise GitHubError("Android SDK apksigner.jar가 없습니다.")
+    if expected_signer_sha256 is None:
+        if not AAPT.is_file():
+            raise GitHubError("Android SDK aapt.exe is missing.")
+        badging = subprocess.run(
+            [str(AAPT), "dump", "badging", str(apk_path)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        package = re.search(r"^package: name='([^']+)'", badging.stdout, re.MULTILINE)
+        if badging.returncode or not package:
+            raise GitHubError("릴리스 APK 패키지 이름을 확인할 수 없습니다.")
+        expected_signer_sha256 = expected_signer_for_package(package.group(1))
     result = subprocess.run(
         [str(JAVA_HOME / "bin" / "java.exe"), "-jar", str(APKSIGNER_JAR),
          "verify", "--verbose", "--print-certs", "--min-sdk-version", "21", str(apk_path)],
@@ -143,7 +185,7 @@ def verify_local_apk_signature(apk_path: Path):
         raise GitHubError("릴리스 APK에 검증 가능한 v1 서명이 없습니다.")
     if "Verified using v2 scheme (APK Signature Scheme v2): true" not in output:
         raise GitHubError("릴리스 APK에 검증 가능한 v2 서명이 없습니다.")
-    if EXPECTED_SIGNER_SHA256 not in output.lower():
+    if expected_signer_sha256 and expected_signer_sha256.lower() not in output.lower():
         raise GitHubError("릴리스 APK 서명 인증서가 기존 MA 설치본과 다릅니다.")
 
 
@@ -238,10 +280,10 @@ def verify_release(token: str, app_id: str, expected_version: str | None = None)
     manifest_asset = asset_by_name[manifest_name]
     manifest_bytes = download_private_asset(token, manifest_asset["url"], 256 * 1024)
     manifest = json.loads(manifest_bytes.decode("utf-8"))
-    metadata = json.loads((ROOT / "mobile-app.json").read_text(encoding="utf-8-sig"))
+    package_name = manifest.get("package_name")
+    expected_signer = expected_signer_for_package(package_name or "")
     if (
         manifest.get("app_id") != app_id
-        or manifest.get("package_name") != metadata.get("application_id")
         or manifest.get("platform") != "android"
         or manifest.get("version") != release["tag_name"][1:]
         or manifest.get("schema") != 1
@@ -250,6 +292,8 @@ def verify_release(token: str, app_id: str, expected_version: str | None = None)
         or not re.fullmatch(r"[0-9a-f]{64}", manifest.get("sha256", ""))
     ):
         raise GitHubError("게시된 manifest와 MA release 태그가 일치하지 않습니다.")
+    if str(manifest.get("signer_sha256", expected_signer)).lower() != expected_signer:
+        raise GitHubError("게시된 manifest 서명 인증서가 MA 패키지 정책과 다릅니다.")
     apk_name = manifest["apk_asset_name"]
     if names.count(apk_name) != 1 or apk_name not in asset_by_name:
         raise GitHubError("게시된 Release에 manifest가 가리키는 APK가 없습니다.")
@@ -263,7 +307,7 @@ def verify_release(token: str, app_id: str, expected_version: str | None = None)
     with tempfile.TemporaryDirectory(prefix="ma-release-verify-") as temporary:
         apk_path = Path(temporary) / apk_name
         apk_path.write_bytes(apk)
-        verify_local_apk_signature(apk_path)
+        verify_local_apk_signature(apk_path, expected_signer)
         verify_apk_manifest_identity(apk_path, manifest)
     print(
         f"Verified {release['tag_name']}: {len(apk)} bytes; manifest size/SHA, "
@@ -313,16 +357,18 @@ def main() -> int:
     try:
         run_build()
         apk_name = f"MA-{app_id}-{bumped['version']}.apk"
-        apk_path = ROOT / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+        apk_path = ROOT / "app" / "build" / "outputs" / "apk" / "release" / "app-release.apk"
         if not apk_path.is_file() or apk_path.stat().st_size <= 0:
             raise GitHubError("디버그 APK가 생성되지 않았습니다.")
-        verify_local_apk_signature(apk_path)
+        expected_signer = expected_signer_for_package(metadata["application_id"])
+        verify_local_apk_signature(apk_path, expected_signer)
         apk_size = apk_path.stat().st_size
         apk_sha256 = hashlib.sha256(apk_path.read_bytes()).hexdigest()
         manifest = {
             "schema": 1,
             "app_id": app_id,
             "package_name": metadata["application_id"],
+            "signer_sha256": expected_signer,
             "platform": "android",
             "version": bumped["version"],
             "version_code": bumped["version_code"],

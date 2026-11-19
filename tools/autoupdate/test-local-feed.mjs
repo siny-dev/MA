@@ -9,7 +9,7 @@ assert.equal(manifestResponse.status, 200, 'manifest should be available');
 const manifest = await manifestResponse.json();
 assert.equal(manifest.schema, 1);
 assert.equal(manifest.app_id, base.split('/').at(-1));
-assert.equal(manifest.package_name, 'com.siny.apps.ma_3c44c3e1b8');
+assert.equal(manifest.package_name, 'com.doumi.helper');
 assert.equal(manifest.platform, 'android');
 assert.ok(Number.isSafeInteger(manifest.version_code) && manifest.version_code > 0);
 assert.match(manifest.version, /^\d+\.\d+\.\d+$/);

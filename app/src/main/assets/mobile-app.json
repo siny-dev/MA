@@ -2,7 +2,8 @@
     "schema":  1,
     "app_name":  "MA",
     "app_id":  "ma-3c44c3e1b8",
-    "application_id":  "com.siny.apps.ma_3c44c3e1b8",
+    "application_id":  "com.doumi.helper",
+    "signing_certificate_sha256":  "5f5951336912c1c8772c96fccc88799ba96beba2488fe3296d22c23469da8987",
     "platform":  "android",
     "modules":  [
                     "AutoUpdate/1",

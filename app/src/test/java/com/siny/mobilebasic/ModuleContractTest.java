@@ -72,8 +72,12 @@ public final class ModuleContractTest {
 
     private static String applicationIdInGradle(Path path) throws Exception{
         String build=Files.readString(path,StandardCharsets.UTF_8);
-        java.util.regex.Matcher matcher=java.util.regex.Pattern.compile("applicationId '([^']+)'").matcher(build);
-        if(!matcher.find())throw new AssertionError("applicationId missing from app/build.gradle");
-        return matcher.group(1);
+        java.util.regex.Matcher literal=java.util.regex.Pattern.compile("applicationId '([^']+)'").matcher(build);
+        if(literal.find())return literal.group(1);
+        if(java.util.regex.Pattern.compile("applicationId appMetadata\\.application_id as String").matcher(build).find()){
+            Path metadata=path.getParent().getParent().resolve("mobile-app.json");
+            return read(metadata).getString("application_id");
+        }
+        throw new AssertionError("applicationId missing from app/build.gradle");
     }
 }

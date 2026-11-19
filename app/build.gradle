@@ -14,12 +14,27 @@ android {
     namespace 'com.siny.mobilebasic'
     compileSdk 37
 
-    // Keep the APK readable by PackageManager's legacy archive-signature path too.
-    // Older installed AutoUpdate clients verify candidates with GET_SIGNATURES.
+    // Debug builds remain development-signed unless the release script supplies
+    // the existing MA signing identity. Production releases must use that identity.
     signingConfigs {
         debug {
             enableV1Signing true
             enableV2Signing true
+        }
+        release {
+            def signingStore = providers.environmentVariable('MA_LEGACY_KEYSTORE').orNull
+            def signingAlias = providers.environmentVariable('MA_LEGACY_KEY_ALIAS').orNull
+            def signingStorePassword = providers.environmentVariable('MA_LEGACY_STORE_PASSWORD').orNull
+            def signingKeyPassword = providers.environmentVariable('MA_LEGACY_KEY_PASSWORD').orNull
+            if (signingStore && signingAlias && signingStorePassword && signingKeyPassword) {
+                storeFile file(signingStore)
+                storePassword signingStorePassword
+                keyAlias signingAlias
+                keyPassword signingKeyPassword
+            }
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
         }
     }
 
@@ -28,7 +43,7 @@ android {
     }
 
     defaultConfig {
-        applicationId 'com.siny.apps.ma_3c44c3e1b8'
+        applicationId appMetadata.application_id as String
         minSdk 26
         targetSdk 35
         versionCode appVersion.version_code as int
@@ -46,6 +61,13 @@ android {
 
     testOptions {
         unitTests.returnDefaultValues = true
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+        }
     }
 }
 
