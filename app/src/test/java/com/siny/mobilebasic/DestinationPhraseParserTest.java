@@ -29,6 +29,35 @@ public final class DestinationPhraseParserTest {
         assertEquals("서울 종로구 약국", result.destination);
     }
 
+    @Test public void changingOnlyTheClinicTypeKeepsThePreviouslySpokenNeighborhood() {
+        String[][] cases = {
+                {"부산 금정구 서동 피부과 말고 내과로 가자", "부산 금정구 서동 내과"},
+                {"서동에 있는 피부과 아니고 내과로 데려가 줘", "서동 내과"},
+                {"부산 금정구 서동 피부과 말고 내과요", "부산 금정구 서동 내과"},
+                {"서동 피부과 말고 내과로 해 줘", "서동 내과"},
+                {"아니 피부과 말고 내과로", "내과"}
+        };
+        for (String[] scenario : cases) {
+            DestinationPhraseParser.Result result = DestinationPhraseParser.parse(scenario[0]);
+            assertTrue(scenario[0], result.isUsable());
+            assertEquals(scenario[0], scenario[1], result.destination);
+        }
+    }
+
+    @Test public void aCorrectionCarriesOnlyAnExplicitPreviousFacilityLocality() {
+        DestinationPhraseParser.Result corrected =
+                DestinationPhraseParser.parseWithPreviousDestinationCorrection(
+                        "아니 내과로", "부산 금정구 서동 피부과");
+        assertEquals("부산 금정구 서동 내과", corrected.destination);
+
+        assertEquals("내과", DestinationPhraseParser.parseWithPreviousDestinationCorrection(
+                "아니 내과로", "서울역").destination);
+        assertEquals("내과", DestinationPhraseParser.parseWithPreviousDestinationCorrection(
+                "내과로", "부산 금정구 서동 피부과").destination);
+        assertEquals("내과", DestinationPhraseParser.parse(
+                "서울역 말고 내과로").destination);
+    }
+
     @Test public void extractsDestinationWithPoliteRequest() {
         DestinationPhraseParser.Result result =
                 DestinationPhraseParser.parse("저는 서울역으로 가고 싶습니다");
@@ -47,6 +76,19 @@ public final class DestinationPhraseParserTest {
         DestinationPhraseParser.Result result = DestinationPhraseParser.parse("거기로 가고 싶어요");
         assertFalse(result.isUsable());
         assertFalse(result.message.isEmpty());
+    }
+
+    @Test public void refusesToSearchAnUnresolvedPreviousPlaceReference() {
+        for (String utterance : new String[]{
+                "아까 그곳으로 가자", "전에 갔던 병원으로 가줘", "그쪽으로 데려가",
+                "그 약국으로 가자", "그 피부과로 데려가", "거기로 가고 싶어요",
+                "거기 있는 피부과 한 번 검색해 줘", "그 아래 동네 피부과 데려가 줘",
+                "그쪽 근처 병원 찾아봐", "거기 동네 피부과"}) {
+            DestinationPhraseParser.Result result = DestinationPhraseParser.parse(utterance);
+            assertFalse(utterance, result.isUsable());
+            assertTrue(utterance, result.message.contains("장소 이름"));
+        }
+        assertTrue(DestinationPhraseParser.parse("병원에 가자").isUsable());
     }
 
     @Test public void doesNotGuessSavedHomeAddress() {
@@ -71,6 +113,105 @@ public final class DestinationPhraseParserTest {
         DestinationPhraseParser.Result result = DestinationPhraseParser.parse("잠실역으로 데려다 주세요");
         assertTrue(result.isUsable());
         assertEquals("잠실역", result.destination);
+    }
+
+    @Test public void simulatedSeniorEverydayTakeMeTherePhrasesKeepCommandsOutOfSearchQuery() {
+        String[][] cases = {
+                {"부산 금정구 서동 피부과 데려가", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과로 데려가요", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과로 데려가 주세요", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과로 데려가 줘", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과 좀 찾아봐", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과 검색해줘", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과 검색 좀 해줘", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과 좀 알려줘", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과로 부탁해", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과 좀 부탁해", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과 알아봐 줘", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과를 좀 찾아봐 줘", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과를 검색해 주세요", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과에 한번 데려다 주세요", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과 한 번 데려다 주실래요", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과 한 번 모셔다 주세요", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과로 가실래요", "부산 금정구 서동 피부과"},
+                {"부산 금정구 서동 피부과를 안내해 주세요", "부산 금정구 서동 피부과"},
+                {"서동에 있는 피부과로 데려가", "서동에 있는 피부과"},
+                {"검색해 줘 서동 피부과 부산 금정구 말이야", "서동 피부과 부산 금정구"},
+                {"피부과 서동 쪽 데려다 줘", "피부과 서동"},
+                {"서동 피부과, 그거 검색해 줘", "서동 피부과"}
+        };
+        for (String[] scenario : cases) {
+            DestinationPhraseParser.Result result = DestinationPhraseParser.parse(scenario[0]);
+            assertTrue(scenario[0], result.isUsable());
+            assertEquals(scenario[0], scenario[1], result.destination);
+        }
+    }
+
+    @Test public void commandFirstAndConversationalCorrectionPhrasesKeepTheFullPlaceIntent() {
+        String[][] cases = {
+                {"데려다 줘, 서동 피부과", "서동 피부과"},
+                {"찾아봐, 부산 금정구 서동 피부과", "부산 금정구 서동 피부과"},
+                {"검색해 줘 서동 피부과 부산 금정구 말이야", "서동 피부과 부산 금정구"},
+                {"금정구 아니고 그냥 서동 피부과 찾아 줘", "서동 피부과"}
+        };
+        for (String[] scenario : cases) {
+            DestinationPhraseParser.Result result = DestinationPhraseParser.parse(scenario[0]);
+            assertTrue(scenario[0], result.isUsable());
+            assertEquals(scenario[0], scenario[1], result.destination);
+        }
+    }
+
+    @Test public void asksWhenAnActionWordIsEmbeddedBetweenAreaAndFacility() {
+        DestinationPhraseParser.Result result =
+                DestinationPhraseParser.parse("서동 가자 피부과 찾아 줘");
+        assertFalse(result.isUsable());
+        assertTrue(result.message.contains("장소 이름"));
+    }
+
+    @Test public void conflictingRepeatedAreaCorrectionsAreHeldInsteadOfChoosingTheLastArea() {
+        DestinationPhraseParser.Result result = DestinationPhraseParser.parse(
+                "금정구 아니고 해운대구 말고 서동 피부과 찾아 줘");
+        assertFalse(result.isUsable());
+        assertTrue(result.message.contains("동네가 여러 곳"));
+
+        DestinationPhraseParser.Result areaDroppedByLastCorrection = DestinationPhraseParser.parse(
+                "금정구 아니고 해운대구 말고 피부과 찾아 줘");
+        assertFalse(areaDroppedByLastCorrection.isUsable());
+        assertTrue(areaDroppedByLastCorrection.message.contains("동네가 여러 곳"));
+
+        assertEquals("서울 종로구 약국", DestinationPhraseParser.parse(
+                "부산 금정구 서동 피부과 말고 서울 종로구 약국").destination);
+        assertEquals("해운대구 피부과", DestinationPhraseParser.parse(
+                "금정구 말고 해운대구 피부과").destination);
+        assertEquals("서울 종로구 약국", DestinationPhraseParser.parse(
+                "부산 금정구 피부과 말고 서울 종로구 약국 말고 약국").destination);
+        assertEquals("부산 동래구 약국", DestinationPhraseParser.parse(
+                "부산 금정구 피부과 말고 서울 종로구 약국 말고 부산 동래구 약국").destination);
+
+        for (String utterance : new String[]{
+                "부산 금정구 피부과 말고 서울 종로구 말고 약국",
+                "금정구 말고 해운대구 말고 약국"}) {
+            DestinationPhraseParser.Result unresolved = DestinationPhraseParser.parse(utterance);
+            assertFalse(utterance, unresolved.isUsable());
+        }
+    }
+
+    @Test public void asksWhichPlaceTypeWhenCorrectionAlsoAddsAnotherCategory() {
+        DestinationPhraseParser.Result result = DestinationPhraseParser.parse(
+                "부산 금정구 피부과 말고 내과 그리고 약국");
+        assertFalse(result.isUsable());
+        assertTrue(result.message.contains("장소 종류가 여러 가지"));
+
+        DestinationPhraseParser.Result hospitalAndPharmacy = DestinationPhraseParser.parse(
+                "부산 금정구 병원 그리고 약국");
+        assertFalse(hospitalAndPharmacy.isUsable());
+    }
+
+    @Test public void repeatedFacilityCorrectionsKeepExplicitLocalityAndOnlyFinalFacility() {
+        DestinationPhraseParser.Result result = DestinationPhraseParser.parse(
+                "부산 금정구 서동 피부과 말고 내과 아니고 이비인후과로");
+        assertTrue(result.isUsable());
+        assertEquals("부산 금정구 서동 이비인후과", result.destination);
     }
 
     @Test public void extractsDestinationWithSimpleGoRequest() {
@@ -274,6 +415,10 @@ public final class DestinationPhraseParserTest {
 
     @Test public void correctionTailExtractionKeepsOnlyTheCorrectedPhrase() {
         assertEquals("강남역", DestinationPhraseParser.destinationAfterCorrection("서울역 말고 강남역"));
+        for (String marker : new String[]{"빼고", "말구", "대신"}) {
+            assertEquals(marker, "강남역", DestinationPhraseParser.destinationAfterCorrection(
+                    "서울역 " + marker + " 강남역"));
+        }
     }
 
     @Test public void aSpokenDestinationCorrectionUsesOnlyTheLatestPlaceInLocalFallback() {

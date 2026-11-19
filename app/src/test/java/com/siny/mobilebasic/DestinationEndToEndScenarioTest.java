@@ -45,6 +45,19 @@ public final class DestinationEndToEndScenarioTest {
         }
     }
 
+    @Test public void unspokenAiBusinessNameCannotReplaceTheUserRequestedPlaceType() throws Exception {
+        String speech = "부산 금정구 서동에 피부과 찾아줘";
+        DestinationAiClient.Result ai = DestinationAiClient.parseResponse(
+                "{\"searchQuery\":\"부산 금정구 서동 이종호 피부과\","
+                        + "\"region\":\"부산 금정구 서동\",\"category\":\"피부과\","
+                        + "\"placeName\":\"이종호 피부과\",\"needsClarification\":false,"
+                        + "\"clarificationQuestion\":\"\"}", speech);
+
+        String query = DestinationQueryGuard.preserveExplicitIntent("", speech, ai.searchQuery);
+        assertFalse(ai.hasNamedPlace);
+        assertEquals("부산 금정구 서동 피부과", query);
+    }
+
     @Test public void conversationClarificationKeepsPriorDistrictAndNewNeighborhoodAndCategory() {
         String query = DestinationQueryGuard.preserveExplicitIntent("부산 금정구에 있는 병원",
                 "서동의 피부과", "서동");
@@ -82,6 +95,21 @@ public final class DestinationEndToEndScenarioTest {
                 "129.1022", "35.2156"));
         assertTrue(NaverLocalSearchClient.parseResponse(genericDoctor,
                 "부산 금정구 서동 피부과").places.isEmpty());
+    }
+
+    @Test public void spokenAdministrativeDongAndParcelLegalDongMismatchIsExplainedAsFilteredResults()
+            throws Exception {
+        NaverLocalSearchClient.Result results = NaverLocalSearchClient.parseResponse(response(
+                item("우장산 동네마트", "대형마트", "서울특별시 강서구 화곡동 123-4",
+                        "서울특별시 강서구 강서로 123", "126.8500", "37.5500")),
+                "서울 강서구 우장산동 마트");
+
+        assertTrue(results.places.isEmpty());
+        assertEquals(1, results.rawResultCount);
+        assertEquals(1, results.rejectedByArea);
+        assertEquals(DestinationSearchFailurePolicy.Kind.CONSTRAINT_MISMATCH,
+                DestinationSearchFailurePolicy.classify(results));
+        assertTrue(DestinationSearchFailurePolicy.messageFor(results).contains("검색 결과는 있었지만"));
     }
 
     @Test public void multiplePlausiblePlacesStayUnconfirmedUntilTheUserChooses() throws Exception {

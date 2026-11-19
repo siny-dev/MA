@@ -18,7 +18,6 @@ final class NaverGuideAutomation {
     private static final String DESTINATION_NAME = "destination_name";
     private static final String DESTINATION_ADDRESS = "destination_address";
     private static final String ARM_GENERATION = "arm_generation";
-    private static final long ARM_WINDOW_MS = 90_000L;
 
     private NaverGuideAutomation() {}
 
@@ -35,7 +34,8 @@ final class NaverGuideAutomation {
                 .remove(RESULT_AT)
                 .remove(LEGACY_EXPIRES_AT);
         if (bootCount >= 0L) {
-            editor.putLong(EXPIRES_AT_ELAPSED, SystemClock.elapsedRealtime() + ARM_WINDOW_MS);
+            editor.putLong(EXPIRES_AT_ELAPSED,
+                    SystemClock.elapsedRealtime() + NaverGuideArmLease.ARM_WINDOW_MS);
         } else {
             editor.remove(EXPIRES_AT_ELAPSED);
         }
@@ -55,17 +55,17 @@ final class NaverGuideAutomation {
     }
 
     static boolean isArmed(Context context) {
+        return hasMinimumRemaining(context, 1L);
+    }
+
+    static boolean hasMinimumRemaining(Context context, long minimumRemainingMs) {
         SharedPreferences prefs = preferences(context);
         if (!prefs.getBoolean(ARMED, false)) return false;
         long expectedBootCount = prefs.getLong(BOOT_COUNT, -1L);
         long actualBootCount = currentBootCount(context);
-        if (expectedBootCount < 0L || actualBootCount < 0L
-                || expectedBootCount != actualBootCount) {
-            disarm(context, "expired");
-            return false;
-        }
         long expiresAt = prefs.getLong(EXPIRES_AT_ELAPSED, 0L);
-        if (expiresAt > SystemClock.elapsedRealtime()) return true;
+        if (NaverGuideArmLease.isUsable(expectedBootCount, actualBootCount, expiresAt,
+                SystemClock.elapsedRealtime(), minimumRemainingMs)) return true;
         disarm(context, "expired");
         return false;
     }

@@ -21,8 +21,10 @@ TOOLCHAIN = Path(r"C:\AI-Work\Toolchains\MobileBasicTool")
 JAVA_HOME = TOOLCHAIN / "jdk17" / "jdk-17.0.21+9"
 ANDROID_HOME = TOOLCHAIN / "android-sdk"
 GRADLE_USER_HOME = TOOLCHAIN / "gradle-home"
+APKSIGNER_JAR = ANDROID_HOME / "build-tools" / "36.0.0" / "lib" / "apksigner.jar"
 API_ROOT = f"https://api.github.com/repos/{REPOSITORY}"
 USER_AGENT = "MA-GitHub-Release/1"
+EXPECTED_SIGNER_SHA256 = "d2206ba8af559c091b82d7dd65e16f597629c361c623f93f0da10a5a43c84679"
 
 
 class GitHubError(RuntimeError):
@@ -122,6 +124,25 @@ def run_build():
     )
     if result.returncode:
         raise GitHubError(f"MA 테스트/빌드 실패 (exit {result.returncode})")
+
+
+def verify_local_apk_signature(apk_path: Path):
+    if not APKSIGNER_JAR.is_file():
+        raise GitHubError("Android SDK apksigner.jar가 없습니다.")
+    result = subprocess.run(
+        [str(JAVA_HOME / "bin" / "java.exe"), "-jar", str(APKSIGNER_JAR),
+         "verify", "--verbose", "--print-certs", "--min-sdk-version", "21", str(apk_path)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    output = result.stdout + result.stderr
+    if result.returncode or "Verified using v1 scheme (JAR signing): true" not in output:
+        raise GitHubError("릴리스 APK에 검증 가능한 v1 서명이 없습니다.")
+    if "Verified using v2 scheme (APK Signature Scheme v2): true" not in output:
+        raise GitHubError("릴리스 APK에 검증 가능한 v2 서명이 없습니다.")
+    if EXPECTED_SIGNER_SHA256 not in output.lower():
+        raise GitHubError("릴리스 APK 서명 인증서가 기존 MA 설치본과 다릅니다.")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -235,9 +256,13 @@ def main() -> int:
     if "--verify-only" in sys.argv:
         verify_release(token, app_id, version["version"])
         return 0
-    next_parts = version["version"].split(".")
-    next_parts[2] = str(int(next_parts[2]) + 1).zfill(len(next_parts[2]))
-    next_version = ".".join(next_parts)
+    publish_current = "--publish-current" in sys.argv
+    if publish_current:
+        next_version = version["version"]
+    else:
+        next_parts = version["version"].split(".")
+        next_parts[2] = str(int(next_parts[2]) + 1).zfill(len(next_parts[2]))
+        next_version = ".".join(next_parts)
     tag = f"v{next_version}"
     release_url = f"{API_ROOT}/releases/tags/{urllib.parse.quote(tag, safe='')}"
     try:
@@ -248,7 +273,11 @@ def main() -> int:
         if "HTTP 404" not in str(exc):
             raise
 
-    old_main, old_asset, bumped = update_versions(version_path, asset_version_path)
+    old_main = old_asset = None
+    if publish_current:
+        bumped = version
+    else:
+        old_main, old_asset, bumped = update_versions(version_path, asset_version_path)
     draft_id = None
     try:
         run_build()
@@ -256,6 +285,7 @@ def main() -> int:
         apk_path = ROOT / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
         if not apk_path.is_file() or apk_path.stat().st_size <= 0:
             raise GitHubError("디버그 APK가 생성되지 않았습니다.")
+        verify_local_apk_signature(apk_path)
         apk_size = apk_path.stat().st_size
         apk_sha256 = hashlib.sha256(apk_path.read_bytes()).hexdigest()
         manifest = {
@@ -322,8 +352,9 @@ def main() -> int:
         print("This public repository contains the MA update feed and release assets only.")
         return 0
     except Exception:
-        version_path.write_bytes(old_main)
-        asset_version_path.write_bytes(old_asset)
+        if old_main is not None and old_asset is not None:
+            version_path.write_bytes(old_main)
+            asset_version_path.write_bytes(old_asset)
         if draft_id:
             print("A draft release was retained so it can be retried without publishing partial assets.", file=sys.stderr)
         raise

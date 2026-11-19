@@ -21,6 +21,37 @@ public final class DestinationConfirmationParserTest {
         }
     }
 
+    @Test public void bareAffirmativeIsAcceptedOnlyWhenBoundToAnActiveYesNoPrompt() {
+        for (String response : new String[]{"네", "예", "응"}) {
+            assertEquals(response, DestinationConfirmationParser.Decision.YES,
+                    DestinationConfirmationParser.classifyActiveYesNoAnswer(response));
+        }
+        assertEquals(DestinationConfirmationParser.Decision.UNCLEAR,
+                DestinationConfirmationParser.classifyActiveYesNoAnswer("어"));
+        assertEquals(DestinationConfirmationParser.Decision.UNCLEAR,
+                DestinationConfirmationParser.classifyActiveYesNoAnswer("네, 맞나요?"));
+        assertEquals(DestinationConfirmationParser.Decision.NO,
+                DestinationConfirmationParser.classifyActiveYesNoAnswer("아니요"));
+
+        java.util.List<String> clearFirst = java.util.Arrays.asList("네", "어");
+        assertEquals(DestinationConfirmationParser.Decision.YES,
+                DestinationConfirmationParser.classifyActiveYesNoHypotheses(clearFirst));
+        assertEquals("네", DestinationConfirmationParser.representativeActiveYesNoHypothesis(
+                clearFirst, DestinationConfirmationParser.Decision.YES));
+        assertEquals(DestinationConfirmationParser.Decision.UNCLEAR,
+                DestinationConfirmationParser.classifyActiveYesNoHypotheses(
+                        java.util.Arrays.asList("네", "네, 근데 강남역이요")));
+        assertEquals(DestinationConfirmationParser.Decision.UNCLEAR,
+                DestinationConfirmationParser.classifyActiveYesNoHypotheses(
+                        java.util.Arrays.asList("네, 맞아요", "서동 피부과로 바꿔 주세요")));
+        assertEquals(DestinationConfirmationParser.Decision.UNCLEAR,
+                DestinationConfirmationParser.classifyActiveYesNoHypotheses(
+                        java.util.Arrays.asList("어", "네")));
+        assertEquals(DestinationConfirmationParser.Decision.UNCLEAR,
+                DestinationConfirmationParser.classifyActiveYesNoHypotheses(
+                        java.util.Arrays.asList("네", "아니요")));
+    }
+
     @Test public void recognizesNegativeAnswersBeforePositiveWords() {
         assertEquals(DestinationConfirmationParser.Decision.NO,
                 DestinationConfirmationParser.classify("아니요, 다른 곳이에요"));
@@ -123,15 +154,28 @@ public final class DestinationConfirmationParserTest {
         assertEquals(DestinationConfirmationParser.Decision.YES,
                 DestinationConfirmationParser.classifyHypotheses(
                         Arrays.asList("네, 그렇게 해주세요", "네, 거기로 안내해 주세요")));
-        assertEquals(DestinationConfirmationParser.Decision.YES,
-                DestinationConfirmationParser.classifyHypotheses(
-                        Arrays.asList("어", "네, 그렇게 해주세요", "네, 맞아요")));
         assertEquals(DestinationConfirmationParser.Decision.UNCLEAR,
                 DestinationConfirmationParser.classifyHypotheses(
+                        Arrays.asList("어", "네, 그렇게 해주세요", "네, 맞아요")));
+        assertEquals("",
+                DestinationConfirmationParser.representativeHypothesis(
+                        Arrays.asList("어", "네, 그렇게 해주세요", "네, 맞아요"),
+                        DestinationConfirmationParser.Decision.UNCLEAR));
+        assertEquals(DestinationConfirmationParser.Decision.NO,
+                DestinationConfirmationParser.classifyHypotheses(
                         Arrays.asList("아니요, 다른 곳이에요", "네, 맞아요", "네, 그렇게 해주세요")));
+        assertEquals(DestinationConfirmationParser.Decision.NO,
+                DestinationConfirmationParser.classifyActiveYesNoHypotheses(
+                        Arrays.asList("아니", "네")));
+        assertEquals("아니",
+                DestinationConfirmationParser.representativeActiveYesNoHypothesis(
+                        Arrays.asList("아니", "네"), DestinationConfirmationParser.Decision.NO));
         assertEquals(DestinationConfirmationParser.Decision.UNCLEAR,
                 DestinationConfirmationParser.classifyHypotheses(
                         Arrays.asList("네, 맞아요", "아니요, 다른 곳이에요")));
+        assertEquals(DestinationConfirmationParser.Decision.UNCLEAR,
+                DestinationConfirmationParser.classifyActiveYesNoHypotheses(
+                        Arrays.asList("네", "아니")));
         assertEquals(DestinationConfirmationParser.Decision.NO,
                 DestinationConfirmationParser.classifyHypotheses(
                         Arrays.asList("아니요, 취소해 주세요", "아니요")));

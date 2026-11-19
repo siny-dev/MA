@@ -9,6 +9,7 @@
                     "AutoSync/1"
                 ],
     "update_repository":  "siny-dev/MA",
+    "update_repository_public":  true,
     "update_manifest_url":  "",
     "autosync_server_url":  ""
 }

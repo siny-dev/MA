@@ -1,6 +1,7 @@
 package com.siny.mobilebasic;
 
 import android.accessibilityservice.AccessibilityService;
+import android.graphics.Rect;
 import android.os.SystemClock;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -78,7 +79,7 @@ public final class NaverGuideAccessibilityService extends AccessibilityService {
             resetStableActiveGuidance();
             return;
         }
-        if ("start_tap_sent".equals(result)) {
+        if ("start_tap_sent".equals(result) || "manual_start_tapped".equals(result)) {
             AccessibilityNodeInfo activeRoot = getRootInActiveWindow();
             if (activeRoot == null) {
                 resetStableScreen();
@@ -116,6 +117,11 @@ public final class NaverGuideAccessibilityService extends AccessibilityService {
             return;
         }
         try {
+            if (!isTargetRoot(root)) {
+                resetStableScreen();
+                resetStableActiveGuidance();
+                return;
+            }
             // A manually started route consumes the old one-shot arm only after
             // an exact active-guidance label is stable across multiple events.
             // A transient label in a changing route screen must not disarm early.
@@ -131,17 +137,23 @@ public final class NaverGuideAccessibilityService extends AccessibilityService {
                 return;
             }
             resetStableActiveGuidance();
+            // A duplicated or truncated active-guidance label is still a reason
+            // to fail closed; it must not be interpreted as an idle route screen.
+            if (containsLabelOrUnknown(root, ACTIVE_LABELS)) {
+                resetStableScreen();
+                return;
+            }
 
-            String verifiedDestinationLabel = findUniqueVerifiedDestinationLabel(root,
+            String verifiedDestinationLabel = findVerifiedDestinationLabel(root,
                     NaverGuideAutomation.destinationName(this),
                     NaverGuideAutomation.destinationAddress(this));
             AccessibilityNodeInfo start = findUniqueLabel(root, START_LABELS);
+            AccessibilityNodeInfo actionTarget = start == null ? null
+                    : findSafeClickableTarget(root, start);
 
             String modeState = findSelectedRouteMode(root);
-            String screenSignature = (verifiedDestinationLabel == null
-                    ? "destination_unverified" : "destination_verified")
-                    + "|" + (start == null ? "start_unavailable" : matchingLabel(start, START_LABELS))
-                    + "|" + modeState;
+            String screenSignature = routeScreenSignature(verifiedDestinationLabel,
+                    start, actionTarget, modeState);
             if (!armBaselineCaptured) {
                 // The first Naver tree after an arm can still be the previous route
                 // or can already be the new route; accessibility does not guarantee
@@ -151,36 +163,89 @@ public final class NaverGuideAccessibilityService extends AccessibilityService {
                 armBaselineSignature = screenSignature;
                 armBaselineCaptured = true;
                 if (start != null) start.recycle();
+                if (actionTarget != null) actionTarget.recycle();
                 resetStableScreen();
                 return;
             }
             if (screenSignature.equals(armBaselineSignature)) {
                 if (start != null) start.recycle();
+                if (actionTarget != null) actionTarget.recycle();
                 resetStableScreen();
                 return;
             }
-            if (verifiedDestinationLabel == null || start == null
+            if (verifiedDestinationLabel == null || start == null || actionTarget == null
                     || !modeState.startsWith("transit:")) {
                 if (start != null) start.recycle();
+                if (actionTarget != null) actionTarget.recycle();
                 resetStableScreen();
                 return;
             }
             if (!observeStableScreen(screenSignature)) {
                 start.recycle();
+                actionTarget.recycle();
                 return;
             }
-            // Consume the one-shot before issuing the click so a queued view-click
-            // event cannot be interpreted as a later manual tap.
-            NaverGuideAutomation.disarm(this, "start_tap_pending");
-            boolean clicked;
-            try {
-                clicked = clickNodeOrClickableParent(start, START_LABELS);
-            } finally {
-                start.recycle();
+            start.recycle();
+            actionTarget.recycle();
+
+            // Re-read the active window after the stability interval. The node
+            // found in the earlier tree may refer to a screen that has since
+            // changed (for example, the user manually started guidance).
+            AccessibilityNodeInfo clickRoot = getRootInActiveWindow();
+            if (clickRoot == null) {
+                resetStableScreen();
+                return;
             }
-            // Disarm before another window-content event can issue a second click.
-            NaverGuideAutomation.disarm(this, clicked ? "start_tap_sent" : "start_tap_failed");
-            resetStableScreen();
+            AccessibilityNodeInfo clickTarget = null;
+            AccessibilityNodeInfo clickActionTarget = null;
+            try {
+                if (!isTargetRoot(clickRoot) || containsLabelOrUnknown(clickRoot, ACTIVE_LABELS)) {
+                    resetStableScreen();
+                    return;
+                }
+                String clickDestinationLabel = findVerifiedDestinationLabel(clickRoot,
+                        NaverGuideAutomation.destinationName(this),
+                        NaverGuideAutomation.destinationAddress(this));
+                clickTarget = findUniqueLabel(clickRoot, START_LABELS);
+                clickActionTarget = clickTarget == null ? null
+                        : findSafeClickableTarget(clickRoot, clickTarget);
+                String clickModeState = findSelectedRouteMode(clickRoot);
+                String clickSignature = routeScreenSignature(clickDestinationLabel,
+                        clickTarget, clickActionTarget, clickModeState);
+                if (clickDestinationLabel == null || clickTarget == null || clickActionTarget == null
+                        || !clickModeState.startsWith("transit:")
+                        || !screenSignature.equals(clickSignature)) {
+                    resetStableScreen();
+                    return;
+                }
+                // The tree scan and stability window may consume most of the arm's
+                // remaining lease. Re-read boot identity and expiry immediately before
+                // consuming the one-shot and invoking ACTION_CLICK. Resolve the clickable
+                // node first so the lease check stays adjacent to the actual action.
+                if (!NaverGuideAutomation.hasMinimumRemaining(this,
+                        NaverGuideArmLease.MINIMUM_CLICK_REMAINING_MS)) {
+                    resetStableScreen();
+                    return;
+                }
+                // Consume the one-shot before issuing the click so a queued view-click
+                // event cannot be interpreted as a later manual tap or second attempt.
+                NaverGuideAutomation.disarm(this, "start_tap_pending");
+                boolean clicked;
+                try {
+                    clicked = clickActionTarget.performAction(
+                            AccessibilityNodeInfo.ACTION_CLICK);
+                } catch (RuntimeException ignored) {
+                    clicked = false;
+                }
+                // Disarm before another window-content event can issue a second click.
+                NaverGuideAutomation.disarm(this,
+                        clicked ? "start_tap_sent" : "start_tap_failed");
+                resetStableScreen();
+            } finally {
+                if (clickActionTarget != null) clickActionTarget.recycle();
+                if (clickTarget != null) clickTarget.recycle();
+                clickRoot.recycle();
+            }
         } finally {
             root.recycle();
         }
@@ -232,8 +297,8 @@ public final class NaverGuideAccessibilityService extends AccessibilityService {
         return match;
     }
 
-    private String findUniqueVerifiedDestinationLabel(AccessibilityNodeInfo root,
-                                                      String expectedName, String expectedAddress) {
+    private String findVerifiedDestinationLabel(AccessibilityNodeInfo root,
+                                                String expectedName, String expectedAddress) {
         ArrayDeque<AccessibilityNodeInfo> pending = new ArrayDeque<>();
         pending.add(AccessibilityNodeInfo.obtain(root));
         String match = null;
@@ -252,12 +317,11 @@ public final class NaverGuideAccessibilityService extends AccessibilityService {
                 verified = DestinationScreenMatcher.matches(label, expectedName, expectedAddress);
             }
             if (verified) {
-                if (match != null) {
-                    node.recycle();
-                    while (!pending.isEmpty()) pending.removeFirst().recycle();
-                    return null;
-                }
-                match = label.trim();
+                // NAVER can expose the same confirmed place in more than one visible
+                // accessibility node (for example, a title and a route summary). Each
+                // node must independently match the exact confirmed name and full
+                // address; duplicate nodes for that same destination are not ambiguity.
+                if (match == null) match = label.trim();
             }
             int childCount = node.getChildCount();
             for (int i = 0; i < childCount; i++) {
@@ -417,6 +481,77 @@ public final class NaverGuideAccessibilityService extends AccessibilityService {
         stableActiveGuidanceEvents = 0;
     }
 
+    private boolean isTargetRoot(AccessibilityNodeInfo root) {
+        CharSequence packageName = root.getPackageName();
+        return packageName != null
+                && NaverGuideAutomation.TARGET_PACKAGE.contentEquals(packageName);
+    }
+
+    /** Returns true on a match or an incomplete tree, so ambiguity fails closed. */
+    private boolean containsLabelOrUnknown(AccessibilityNodeInfo root, Set<String> labels) {
+        ArrayDeque<AccessibilityNodeInfo> pending = new ArrayDeque<>();
+        pending.add(AccessibilityNodeInfo.obtain(root));
+        int visited = 0;
+        boolean truncated = false;
+        while (!pending.isEmpty() && visited < MAX_NODES) {
+            visited++;
+            AccessibilityNodeInfo node = pending.removeFirst();
+            if (matches(node, labels)) {
+                node.recycle();
+                while (!pending.isEmpty()) pending.removeFirst().recycle();
+                return true;
+            }
+            int childCount = node.getChildCount();
+            for (int i = 0; i < childCount; i++) {
+                if (visited + pending.size() >= MAX_NODES) {
+                    truncated = true;
+                    break;
+                }
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) pending.addLast(child);
+            }
+            node.recycle();
+        }
+        truncated |= !pending.isEmpty();
+        while (!pending.isEmpty()) pending.removeFirst().recycle();
+        return truncated;
+    }
+
+    private String routeScreenSignature(String verifiedDestinationLabel,
+                                        AccessibilityNodeInfo start,
+                                        AccessibilityNodeInfo actionTarget,
+                                        String modeState) {
+        return (verifiedDestinationLabel == null ? "destination_unverified"
+                : "destination_verified:" + normalize(verifiedDestinationLabel))
+                + "|" + (start == null ? "start_unavailable" : matchingLabel(start, START_LABELS))
+                + "|control:" + nodeIdentity(actionTarget)
+                + "|" + modeState;
+    }
+
+    private String nodeIdentity(AccessibilityNodeInfo node) {
+        if (node == null) return "unavailable";
+        StringBuilder identity = new StringBuilder();
+        AccessibilityNodeInfo current = AccessibilityNodeInfo.obtain(node);
+        for (int depth = 0; current != null
+                && depth <= NaverGuideClickTargetPolicy.MAX_CLICKABLE_ANCESTOR_DEPTH; depth++) {
+            Rect bounds = new Rect();
+            current.getBoundsInScreen(bounds);
+            CharSequence viewId = current.getViewIdResourceName();
+            CharSequence className = current.getClassName();
+            if (depth > 0) identity.append("^");
+            identity.append(normalize(viewId == null ? "" : viewId.toString()))
+                    .append('|').append(normalize(className == null ? "" : className.toString()))
+                    .append('|').append(bounds.left).append(',').append(bounds.top)
+                    .append(',').append(bounds.right).append(',').append(bounds.bottom)
+                    .append('|').append(current.isEnabled()).append('|').append(current.isClickable());
+            AccessibilityNodeInfo parent = current.getParent();
+            current.recycle();
+            current = parent;
+        }
+        if (current != null) current.recycle();
+        return identity.toString();
+    }
+
     private boolean matches(AccessibilityNodeInfo node, Set<String> labels) {
         if (!node.isVisibleToUser()) return false;
         CharSequence text = node.getText();
@@ -429,23 +564,77 @@ public final class NaverGuideAccessibilityService extends AccessibilityService {
         return value.trim().toLowerCase(Locale.KOREAN).replaceAll("\\s+", " ");
     }
 
-    private boolean clickNodeOrClickableParent(AccessibilityNodeInfo node, Set<String> labels) {
-        AccessibilityNodeInfo current = node;
-        boolean ownsCurrent = false;
-        for (int depth = 0; current != null && depth < 4; depth++) {
-            if (matches(current, labels) && current.isEnabled() && current.isClickable()) {
-                boolean clicked = current.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-                if (clicked) {
-                    if (ownsCurrent) current.recycle();
-                    return true;
-                }
+    private AccessibilityNodeInfo findSafeClickableTarget(AccessibilityNodeInfo root,
+                                                          AccessibilityNodeInfo labelNode) {
+        AccessibilityNodeInfo current = AccessibilityNodeInfo.obtain(labelNode);
+        AccessibilityNodeInfo target = null;
+        int clickableNodesOnPath = 0;
+        for (int depth = 0; current != null
+                && depth <= NaverGuideClickTargetPolicy.MAX_CLICKABLE_ANCESTOR_DEPTH; depth++) {
+            if (current.isVisibleToUser() && current.isEnabled() && current.isClickable()) {
+                clickableNodesOnPath++;
+                if (target == null) target = AccessibilityNodeInfo.obtain(current);
             }
             AccessibilityNodeInfo parent = current.getParent();
-            if (ownsCurrent) current.recycle();
+            current.recycle();
             current = parent;
-            ownsCurrent = true;
         }
-        if (ownsCurrent && current != null) current.recycle();
-        return false;
+        if (current != null) {
+            current.recycle();
+        }
+        if (target == null) return null;
+
+        Rect targetBounds = new Rect();
+        Rect labelBounds = new Rect();
+        Rect viewportBounds = new Rect();
+        target.getBoundsInScreen(targetBounds);
+        labelNode.getBoundsInScreen(labelBounds);
+        root.getBoundsInScreen(viewportBounds);
+        boolean hasCompetingClickable = hasCompetingClickableDescendant(target);
+        boolean safe = NaverGuideClickTargetPolicy.isSafe(clickableNodesOnPath,
+                hasCompetingClickable,
+                targetBounds.left, targetBounds.top, targetBounds.right, targetBounds.bottom,
+                labelBounds.left, labelBounds.top, labelBounds.right, labelBounds.bottom,
+                viewportBounds.left, viewportBounds.top, viewportBounds.right, viewportBounds.bottom);
+        if (!safe) {
+            target.recycle();
+            return null;
+        }
+        return target;
+    }
+
+    /** Unknown or competing interactive descendants make the parent scope unsafe. */
+    private boolean hasCompetingClickableDescendant(AccessibilityNodeInfo target) {
+        ArrayDeque<AccessibilityNodeInfo> pending = new ArrayDeque<>();
+        int childCount = target.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            AccessibilityNodeInfo child = target.getChild(i);
+            if (child != null) pending.addLast(child);
+        }
+        int visited = 0;
+        boolean truncated = false;
+        while (!pending.isEmpty() && visited < MAX_NODES) {
+            visited++;
+            AccessibilityNodeInfo node = pending.removeFirst();
+            boolean isTargetLabel = matches(node, START_LABELS);
+            if (!isTargetLabel && node.isVisibleToUser() && node.isEnabled() && node.isClickable()) {
+                node.recycle();
+                while (!pending.isEmpty()) pending.removeFirst().recycle();
+                return true;
+            }
+            int descendants = node.getChildCount();
+            for (int i = 0; i < descendants; i++) {
+                if (visited + pending.size() >= MAX_NODES) {
+                    truncated = true;
+                    break;
+                }
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) pending.addLast(child);
+            }
+            node.recycle();
+        }
+        truncated |= !pending.isEmpty();
+        while (!pending.isEmpty()) pending.removeFirst().recycle();
+        return truncated;
     }
 }

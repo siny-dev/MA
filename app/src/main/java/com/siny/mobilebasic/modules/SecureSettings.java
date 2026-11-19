@@ -25,6 +25,7 @@ public final class SecureSettings {
     private static final String GEMINI_PROXY_URL = "gemini_proxy_url";
     private static final String ENCRYPTED_TOKEN = "autosync_token_gcm";
     private static final String ENCRYPTED_GEMINI_API_KEY = "gemini_api_key_gcm";
+    private static final String ENCRYPTED_CLOVA_STUDIO_API_KEY = "clova_studio_api_key_gcm";
     private static final String ENCRYPTED_NAVER_CLIENT_ID = "naver_api_client_id_gcm";
     private static final String ENCRYPTED_NAVER_CLIENT_SECRET = "naver_api_client_secret_gcm";
     private final SharedPreferences prefs;
@@ -74,6 +75,15 @@ public final class SecureSettings {
     public String geminiApiKey() {
         String value = prefs.getString(ENCRYPTED_GEMINI_API_KEY, "");
         return value.isEmpty() ? "" : decrypt(value);
+    }
+    public String clovaStudioApiKey() {
+        String value = prefs.getString(ENCRYPTED_CLOVA_STUDIO_API_KEY, "");
+        return value.isEmpty() ? "" : decrypt(value);
+    }
+    public void saveClovaStudioApiKey(String apiKey) {
+        String value = apiKey == null ? "" : apiKey.trim();
+        prefs.edit().putString(ENCRYPTED_CLOVA_STUDIO_API_KEY,
+                value.isEmpty() ? "" : encrypt(value)).apply();
     }
     public String naverApiClientId() {
         String value = prefs.getString(ENCRYPTED_NAVER_CLIENT_ID, "");

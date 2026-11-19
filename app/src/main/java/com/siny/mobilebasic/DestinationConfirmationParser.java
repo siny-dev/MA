@@ -10,6 +10,20 @@ public final class DestinationConfirmationParser {
     private DestinationConfirmationParser() {}
 
     public static Decision classify(String utterance) {
+        return classify(utterance, false);
+    }
+
+    /** Classify an answer only after the app has bound it to an active yes/no prompt. */
+    public static Decision classifyActiveYesNoAnswer(String utterance) {
+        Decision decision = classify(utterance);
+        if (decision != Decision.UNCLEAR || utterance == null) return decision;
+        String compact = utterance.trim().toLowerCase(Locale.KOREAN)
+                .replaceAll("[.!?。！？,，~]+", " ")
+                .replaceAll("\\s+", "");
+        return compact.matches("(?:네|예|응)") ? Decision.YES : Decision.UNCLEAR;
+    }
+
+    private static Decision classify(String utterance, boolean activeYesNoPrompt) {
         if (utterance == null) return Decision.UNCLEAR;
         String value = utterance.trim().toLowerCase(Locale.KOREAN)
                 .replaceAll("[.!?。！？,，~]+", " ")
@@ -34,6 +48,7 @@ public final class DestinationConfirmationParser {
                 || compact.matches(".*(?:어디|어느|뭐라고|뭐|무엇|무슨|어떤|누구|왜|어떻게|몇|맞나요|맞죠|맞습니까|인가요|이죠|할까요|나요|습니까|정말|진짜|다시|못들|잘들|확인해|말씀해).*")) {
             return Decision.UNCLEAR;
         }
+        if (activeYesNoPrompt && compact.matches("(?:네|예|응)")) return Decision.YES;
         if (isExplicitAffirmative(compact)) {
             return Decision.YES;
         }
@@ -42,31 +57,65 @@ public final class DestinationConfirmationParser {
 
     /** Resolve Android's N-best speech results without letting a conflicting transcript approve a route. */
     public static Decision classifyHypotheses(List<String> hypotheses) {
+        return classifyHypotheses(hypotheses, false);
+    }
+
+    /** Resolve N-best answers with the active yes/no prompt context. */
+    public static Decision classifyActiveYesNoHypotheses(List<String> hypotheses) {
+        return classifyHypotheses(hypotheses, true);
+    }
+
+    private static Decision classifyHypotheses(List<String> hypotheses, boolean activeYesNoPrompt) {
         if (hypotheses == null || hypotheses.isEmpty()) return Decision.UNCLEAR;
         Decision primary = Decision.UNCLEAR;
-        int yesCount = 0;
         boolean hasNo = false;
         boolean hasYes = false;
         for (int i = 0; i < hypotheses.size(); i++) {
-            Decision decision = classify(hypotheses.get(i));
+            Decision decision = classify(hypotheses.get(i), activeYesNoPrompt);
             if (i == 0) primary = decision;
             if (decision == Decision.YES) {
-                yesCount++;
                 hasYes = true;
             } else if (decision == Decision.NO) {
                 hasNo = true;
             }
         }
+        // A clear top-ranked rejection is safe to honor even when Android offers a
+        // lower-ranked affirmative alternative. Rejection only discards this candidate;
+        // treating it as unclear can trap the user in repeated confirmation prompts.
+        if (primary == Decision.NO) return Decision.NO;
         if (hasYes && hasNo) return Decision.UNCLEAR;
         if (hasNo) return Decision.NO;
-        if (primary == Decision.YES || yesCount >= 2) return Decision.YES;
+        if (primary == Decision.YES) {
+            // A lower-ranked transcript that contains a destination may be a correction
+            // hidden behind a top-ranked bare "yes". Never approve through that conflict.
+            for (int i = 1; i < hypotheses.size(); i++) {
+                String hypothesis = hypotheses.get(i);
+                if (classify(hypothesis, activeYesNoPrompt) != Decision.YES
+                        && DestinationSpeechHypothesisPolicy.hasIndependentNamedTarget(hypothesis)) {
+                    return Decision.UNCLEAR;
+                }
+            }
+            return Decision.YES;
+        }
+        // Android's recognition hypotheses are alternatives, not independent votes.
+        // Two lower-ranked affirmative guesses must not override an unclear top result
+        // and authorize a destination handoff or route start.
         return Decision.UNCLEAR;
     }
 
     public static String representativeHypothesis(List<String> hypotheses, Decision decision) {
+        return representativeHypothesis(hypotheses, decision, false);
+    }
+
+    public static String representativeActiveYesNoHypothesis(List<String> hypotheses, Decision decision) {
+        return representativeHypothesis(hypotheses, decision, true);
+    }
+
+    private static String representativeHypothesis(List<String> hypotheses, Decision decision,
+                                                   boolean activeYesNoPrompt) {
         if (hypotheses == null || decision == null || decision == Decision.UNCLEAR) return "";
         for (String hypothesis : hypotheses) {
-            if (classify(hypothesis) == decision) return hypothesis;
+            if (classify(hypothesis, activeYesNoPrompt) == decision) return hypothesis;
         }
         return "";
     }

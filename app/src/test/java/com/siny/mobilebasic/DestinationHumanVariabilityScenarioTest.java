@@ -134,7 +134,7 @@ public final class DestinationHumanVariabilityScenarioTest {
         }
     }
 
-    @Test public void conflictingNBestTranscriptsStayUnresolvedRegardlessOfOrder() {
+    @Test public void conflictingNBestTranscriptsNeverApproveAndTopRankedRejectionIsHonored() {
         String[] yes = {"네, 맞아요", "예, 그렇게 해주세요", "응, 출발해"};
         String[] no = {"아니요, 다른 곳이에요", "취소할게요", "아뇨, 그곳 말고"};
         for (String yesText : yes) {
@@ -142,7 +142,7 @@ public final class DestinationHumanVariabilityScenarioTest {
                 assertEquals(DestinationConfirmationParser.Decision.UNCLEAR,
                         DestinationConfirmationParser.classifyHypotheses(
                                 java.util.Arrays.asList(yesText, noText)));
-                assertEquals(DestinationConfirmationParser.Decision.UNCLEAR,
+                assertEquals(DestinationConfirmationParser.Decision.NO,
                         DestinationConfirmationParser.classifyHypotheses(
                                 java.util.Arrays.asList(noText, yesText)));
             }

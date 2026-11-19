@@ -22,6 +22,17 @@ public final class CandidateVoiceLabelBuilderTest {
         assertTrue(labels.get(1).contains("역삼로 25"));
     }
 
+    @Test public void sameNeighborhoodNameInDifferentDistrictsKeepsDistrictInVoiceLabels() {
+        List<String> labels = CandidateVoiceLabelBuilder.build(Arrays.asList(
+                new CandidateVoiceLabelBuilder.Place("서동피부과", "금정구 서동", "서동로 12",
+                        "부산 금정구 서동로 12", false),
+                new CandidateVoiceLabelBuilder.Place("서동피부과", "동래구 서동", "서동로 25",
+                        "부산 동래구 서동로 25", false)));
+
+        assertTrue(labels.get(0).contains("금정구 서동"));
+        assertTrue(labels.get(1).contains("동래구 서동"));
+    }
+
     @Test public void fallsBackToFullAddressWhenRoadDetailStillCollides() {
         List<String> labels = CandidateVoiceLabelBuilder.build(Arrays.asList(
                 new CandidateVoiceLabelBuilder.Place("한빛병원", "서울 강남구", "테헤란로",

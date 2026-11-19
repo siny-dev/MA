@@ -60,6 +60,36 @@ public final class NaverLocalSearchClientTest {
         assertEquals(1, result.places.size());
     }
 
+    @Test public void roadNameAloneCannotSatisfyRequestedNeighborhood() throws Exception {
+        NaverLocalSearchClient.Result result = NaverLocalSearchClient.parseResponse(response(
+                item("서동피부과", "병원 > 피부과", "부산광역시 부산진구 전포동 123-4",
+                        "부산광역시 부산진구 서동로 123", "129.0640", "35.1570")),
+                "부산 서동 피부과");
+
+        assertTrue(result.places.isEmpty());
+        assertEquals(1, result.rawResultCount);
+        assertEquals(1, result.rejectedByArea);
+        assertEquals(1, result.rejectedByRequestedConstraints);
+    }
+
+    @Test public void acceptsNeighborhoodFromParcelAddressWhenDistrictWasNotSpoken() throws Exception {
+        NaverLocalSearchClient.Result result = NaverLocalSearchClient.parseResponse(response(
+                item("서동피부과", "병원 > 피부과", "부산광역시 금정구 서동 123-4",
+                        "부산광역시 금정구 서동로 123", "129.1022", "35.2156")),
+                "부산 서동 피부과");
+
+        assertEquals(1, result.places.size());
+    }
+
+    @Test public void shortenedCityNameMatchesOfficialCityAddressForm() throws Exception {
+        NaverLocalSearchClient.Result result = NaverLocalSearchClient.parseResponse(response(
+                item("서동피부과", "병원 > 피부과", "부산광역시 금정구 서동 123-4",
+                        "부산광역시 금정구 서동로 123", "129.1022", "35.2156")),
+                "부산 서동 피부과");
+
+        assertEquals(1, result.places.size());
+    }
+
     @Test public void rejectsWrongBusinessTypesEvenWhenAddressMatches() throws Exception {
         NaverLocalSearchClient.Result result = NaverLocalSearchClient.parseResponse(response(
                 item("서동 우리은행", "금융,보험 > 은행", "부산 금정구 서동 123-4",
@@ -84,6 +114,21 @@ public final class NaverLocalSearchClientTest {
         NaverLocalSearchClient.Result result = NaverLocalSearchClient.parseResponse(
                 response(clinic, clinic), "부산 금정구 서동 피부과");
         assertEquals(1, result.places.size());
+    }
+
+    @Test public void sameAddressWithDifferentBusinessNamesRemainsTwoCandidates() throws Exception {
+        String first = item("이종호피부과", "피부과", "부산 금정구 서동 123-4",
+                "부산광역시 금정구 서동로 123", "129.1022", "35.2156");
+        String second = item("서동맑은의원", "병원 > 피부과", "부산 금정구 서동 123-4",
+                "부산광역시 금정구 서동로 123", "129.1022", "35.2156");
+
+        NaverLocalSearchClient.Result result = NaverLocalSearchClient.parseResponse(
+                response(first, second), "부산 금정구 서동 피부과");
+
+        assertEquals(2, result.places.size());
+        assertEquals("이종호피부과", result.places.get(0).name);
+        assertEquals("서동맑은의원", result.places.get(1).name);
+        assertEquals(result.places.get(0).address, result.places.get(1).address);
     }
 
     @Test public void malformedAndOversizedResponsesAreRejected() throws Exception {
