@@ -64,3 +64,10 @@ The root cause starts at **1.0.006**, immediately after the last known-good 1.0.
 - The follow-up sequential-version comparison and its result were added to this log and pushed as `b4ed67a` (`Record-MA-1.0.21-bridge-outcome`).
 
 **Status:** The old 1.0.004/1.0.005 package identity now has a verified update candidate staged in its existing channel. The recovered records do not establish that the 1.0.005 app itself was installed on the phone; this log does not claim a new phone-side install result. A newer `com.siny.apps.ma_3c44c3e1b8` installation remains a distinct Android package and cannot be converted in place by this bridge.
+
+### Sequential runtime attempt — 2026-11-19
+
+- The historical APK and updater-policy sequence was re-run for 1.0.002 → 1.0.003 → 1.0.004 → 1.0.005 → 1.0.21 and passed for each package/code/tag/SHA/signer transition; direct bridge acceptance from each archived original-package APK also passed.
+- The `MA_A34_Sim` AVD exists, but this PC has no attached ADB device and no Android Emulator Hypervisor Driver. The x86_64 AVD could not boot with acceleration; CPU-only startup remained offline and crashed.
+- An ARM system image would allow a different emulator path, but `sdkmanager` stopped at Google's SDK license prompt. The license was not accepted. No actual Android runtime install or patch was performed in this attempt.
+- Result: artifact and policy sequence **PASS**; Android runtime sequence **NOT RUN** because this PC's emulator lacks acceleration. No phone action was requested or performed.
