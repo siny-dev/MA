@@ -65,6 +65,16 @@ The root cause starts at **1.0.006**, immediately after the last known-good 1.0.
 
 **Status:** The old 1.0.004/1.0.005 package identity now has a verified update candidate staged in its existing channel. The recovered records do not establish that the 1.0.005 app itself was installed on the phone; this log does not claim a new phone-side install result. A newer `com.siny.apps.ma_3c44c3e1b8` installation remains a distinct Android package and cannot be converted in place by this bridge.
 
+### Signature metadata fallback correction — 2026-11-20
+
+- Found a defect in the prior `signingInfo` fallback: when `PackageManager` returned a non-null `SigningInfo` object with an empty signer array, the code fetched legacy `PackageInfo.signatures` but the final comparison still selected the empty `SigningInfo` array. That caused a valid same-signer update to be rejected at the signature/package verification stage.
+- Updated `AutoUpdateModule.verifyApk` to select the modern signer array only when it contains signer bytes, otherwise use the legacy signature metadata. The exact signer-set comparison remains mandatory; missing signer data still rejects the APK.
+- Added regression coverage for empty/null modern signer arrays, valid modern signer precedence, and rejecting absent signer data.
+- Verification: all **334** JUnit tests passed through JUnitCore using the compiled test classes. `:app:compileDebugUnitTestJavaWithJavac` compiled the updated tests. Gradle's `testDebugUnitTest` worker itself reports `ClassNotFoundException` for every test in this project path; the Gradle worker classpath contains the Korean project-directory path, and the test classes load and pass when invoked directly with that compiled classpath. This is recorded as a local Gradle test-runner limitation, not as a product test failure.
+- Public `siny-dev/MA` release `v1.0.22` is latest. Remote verification passed for the exact manifest size/SHA, package `com.doumi.helper`, version `1.0.22`/code `1008`, and pinned v1/v2 signer. The downloaded release APK was inspected and contains the signer-fallback fix. No phone installation or actual on-device patch is claimed.
+- The approved ARM64 SDK image was installed after its license was accepted. This x86_64 Windows host rejects ARM64 AVDs, and `emulator -accel-check` reports no Android Emulator Hypervisor Driver; therefore no Android runtime patch test could be performed. No physical phone was requested or used.
+- The publisher treated an unrecognized `--help` argument as its normal publish action and created the verified v1.0.22 release. The CLI guard added in this patch now returns help before any release work and rejects unknown options, preventing that side effect on future help queries.
+
 ### Sequential runtime attempt — 2026-11-19
 
 - The historical APK and updater-policy sequence was re-run for 1.0.002 → 1.0.003 → 1.0.004 → 1.0.005 → 1.0.21 and passed for each package/code/tag/SHA/signer transition; direct bridge acceptance from each archived original-package APK also passed.

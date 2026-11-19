@@ -439,42 +439,49 @@ public final class AutoUpdateModule {
         PackageInfo candidate=pm.getPackageArchiveInfo(file.getAbsolutePath(),flags);
         PackageInfo installed=pm.getPackageInfo(context.getPackageName(),flags);
         if(installed==null)throw new UpdateVerificationException("현재 설치된 MA의 패키지 정보를 읽지 못했습니다.");
+        byte[][] candidateSigners=Build.VERSION.SDK_INT>=28
+                ?signerBytes(candidate==null||candidate.signingInfo==null?null:candidate.signingInfo.getApkContentsSigners())
+                :signerBytes(candidate==null?null:candidate.signatures);
+        byte[][] installedSigners=Build.VERSION.SDK_INT>=28
+                ?signerBytes(installed.signingInfo==null?null:installed.signingInfo.getApkContentsSigners())
+                :signerBytes(installed.signatures);
         if(Build.VERSION.SDK_INT>=28){
-            // Some PackageManager implementations return PackageInfo but omit signingInfo
-            // for archives. Retry with the deprecated flag only as a data-source fallback;
-            // the same exact signer comparison remains mandatory.
-            if(candidate==null||candidate.signingInfo==null
-                    ||candidate.signingInfo.getApkContentsSigners()==null
-                    ||candidate.signingInfo.getApkContentsSigners().length==0){
+            // PackageManager may return a non-null SigningInfo whose signer array is
+            // empty for an APK archive. Fall back based on the actual signer data,
+            // not only whether SigningInfo itself is null.
+            if(!hasSignerBytes(candidateSigners)){
                 PackageInfo legacyCandidate=pm.getPackageArchiveInfo(file.getAbsolutePath(),PackageManager.GET_SIGNATURES);
-                if(legacyCandidate!=null&&candidate==null)candidate=legacyCandidate;
-                else if(legacyCandidate!=null)candidate.signatures=legacyCandidate.signatures;
+                if(candidate==null)candidate=legacyCandidate;
+                candidateSigners=signerBytesWithFallback(candidateSigners,
+                        signerBytes(legacyCandidate==null?null:legacyCandidate.signatures));
             }
-            if(installed.signingInfo==null||installed.signingInfo.getApkContentsSigners()==null
-                    ||installed.signingInfo.getApkContentsSigners().length==0){
+            if(!hasSignerBytes(installedSigners)){
                 PackageInfo legacyInstalled=pm.getPackageInfo(context.getPackageName(),PackageManager.GET_SIGNATURES);
-                if(legacyInstalled!=null)installed.signatures=legacyInstalled.signatures;
+                installedSigners=signerBytesWithFallback(installedSigners,
+                        signerBytes(legacyInstalled==null?null:legacyInstalled.signatures));
             }
         }
         if(candidate==null)throw new UpdateVerificationException("Android가 다운로드한 APK의 패키지 정보를 읽지 못했습니다.");
         if(!context.getPackageName().equals(candidate.packageName))throw new UpdateVerificationException("다운로드한 APK가 이 MA 앱의 패키지가 아닙니다.");
         long candidateVersion=Build.VERSION.SDK_INT>=28?candidate.getLongVersionCode():candidate.versionCode;
         if(candidateVersion!=expectedVersion||candidateVersion<=installedVersionCode())throw new UpdateVerificationException("다운로드한 APK의 버전 코드가 배포 정보와 다르거나 설치본보다 낮습니다.");
-        if(Build.VERSION.SDK_INT>=28){
-            android.content.pm.Signature[] candidateSigners=candidate.signingInfo==null
-                    ?candidate.signatures:candidate.signingInfo.getApkContentsSigners();
-            android.content.pm.Signature[] installedSigners=installed.signingInfo==null
-                    ?installed.signatures:installed.signingInfo.getApkContentsSigners();
-            if(!sameSigners(candidateSigners,installedSigners))throw new UpdateVerificationException("다운로드한 APK의 서명이 현재 설치된 MA와 다릅니다.");
-        }else if(candidate.signatures==null||installed.signatures==null||!sameSigners(candidate.signatures,installed.signatures))throw new UpdateVerificationException("다운로드한 APK의 서명이 현재 설치된 MA와 다릅니다.");
+        if(!sameSignerBytes(candidateSigners,installedSigners))throw new UpdateVerificationException("다운로드한 APK의 서명이 현재 설치된 MA와 다릅니다.");
     }
 
-    private static boolean sameSigners(android.content.pm.Signature[] a,android.content.pm.Signature[] b){
-        if(a==null||b==null||a.length==0||a.length!=b.length)return false;
-        byte[][] left=new byte[a.length][];byte[][] right=new byte[b.length][];
-        for(int i=0;i<a.length;i++)left[i]=a[i].toByteArray();
-        for(int i=0;i<b.length;i++)right[i]=b[i].toByteArray();
-        return sameSignerBytes(left,right);
+    private static byte[][] signerBytes(android.content.pm.Signature[] signatures){
+        if(signatures==null||signatures.length==0)return null;
+        byte[][] result=new byte[signatures.length][];
+        for(int i=0;i<signatures.length;i++){
+            if(signatures[i]==null)return null;
+            result[i]=signatures[i].toByteArray();
+        }
+        return result;
+    }
+
+    private static boolean hasSignerBytes(byte[][] signers){
+        if(signers==null||signers.length==0)return false;
+        for(byte[] signer:signers)if(signer==null||signer.length==0)return false;
+        return true;
     }
 
     static boolean sameSignerBytes(byte[][] a,byte[][] b){
@@ -487,6 +494,10 @@ public final class AutoUpdateModule {
             return false;
         }
         return true;
+    }
+
+    static byte[][] signerBytesWithFallback(byte[][] signingInfoSigners,byte[][] legacySigners){
+        return hasSignerBytes(signingInfoSigners)?signingInfoSigners:legacySigners;
     }
 
     private String readUrl(String url,int maximum) throws IOException{

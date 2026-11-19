@@ -318,6 +318,19 @@ def verify_release(token: str, app_id: str, expected_version: str | None = None)
 
 
 def main() -> int:
+    allowed_args = {"--verify-only", "--publish-current"}
+    if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
+        print("Usage: publish-github-release.py [--verify-only | --publish-current]")
+        print("Default: build, verify and publish the next MA patch release.")
+        print("--verify-only: verify the configured release without changing GitHub or local version files.")
+        print("--publish-current: publish the version already recorded in version.json.")
+        return 0
+    unknown_args = [arg for arg in sys.argv[1:] if arg not in allowed_args]
+    if unknown_args:
+        raise GitHubError("알 수 없는 인수입니다. --help를 확인하세요.")
+    if "--verify-only" in sys.argv and "--publish-current" in sys.argv:
+        raise GitHubError("--verify-only와 --publish-current는 함께 사용할 수 없습니다.")
+
     metadata_path = ROOT / "mobile-app.json"
     version_path = ROOT / "version.json"
     asset_version_path = ROOT / "app" / "src" / "main" / "assets" / "version.json"

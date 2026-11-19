@@ -120,6 +120,28 @@ public class AutoUpdateSourcePolicyTest {
         assertEquals(false, AutoUpdateModule.sameSignerBytes(null, new byte[][]{{1}}));
     }
 
+    @Test public void emptySigningInfoSignerArrayUsesLegacySignatureFallback() {
+        byte[][] legacy = new byte[][]{{5, 9, 2}};
+        assertEquals(true, AutoUpdateModule.sameSignerBytes(
+                AutoUpdateModule.signerBytesWithFallback(new byte[0][], legacy), legacy));
+        assertEquals(true, AutoUpdateModule.sameSignerBytes(
+                AutoUpdateModule.signerBytesWithFallback(null, legacy), legacy));
+    }
+
+    @Test public void validSigningInfoSignerTakesPrecedenceOverLegacyFallback() {
+        byte[][] current = new byte[][]{{1, 3, 7}};
+        byte[][] staleLegacy = new byte[][]{{5, 9, 2}};
+        assertEquals(true, AutoUpdateModule.sameSignerBytes(
+                AutoUpdateModule.signerBytesWithFallback(current, staleLegacy), current));
+        assertEquals(false, AutoUpdateModule.sameSignerBytes(
+                AutoUpdateModule.signerBytesWithFallback(current, staleLegacy), staleLegacy));
+    }
+
+    @Test public void absentCurrentAndLegacySignerArraysRemainRejected() {
+        assertEquals(false, AutoUpdateModule.sameSignerBytes(
+                AutoUpdateModule.signerBytesWithFallback(new byte[0][], null), new byte[][]{{1}}));
+    }
+
     private static void assertRejectedReleaseUrl(String repository,String tag,String assetName) {
         try {
             AutoUpdateModule.githubReleaseAssetUrl(repository,tag,assetName,"ma-3c44c3e1b8");
