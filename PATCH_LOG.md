@@ -50,6 +50,7 @@ The root cause starts at **1.0.006**, immediately after the last known-good 1.0.
 - `:app:testDebugUnitTest` and `assembleRelease`: passed.
 - APK identity comparison: phone-confirmed 1.0.004 (`com.doumi.helper`, code 1005) and the 1.0.005 release artifact (code 1006) → candidate 1.0.21 (same package, code 1007, original signer `5f5951…`): passed.
 - Historical 1.0.005 `UpdatePolicy` Java checks: it accepts the bridge from both 1.0.004 and 1.0.005 when package, higher version code, tag, actual APK SHA/size, and signer match; a reset version code, mismatched tag, and changed signer were rejected.
+- Sequential historical-artifact simulation: 1.0.002 → 1.0.003 → 1.0.004 → 1.0.005 → 1.0.21 passed package/code/tag/SHA/signer policy checks. Direct 1.0.21 acceptance from each archived 1.0.002–1.0.005 original-package artifact also passed. This is PC policy simulation; it does not claim those steps were installed one by one on the phone.
 - Historical `latest.json` field schema: exact match.
 - Final candidate APK: 1,241,274 bytes; SHA-256 `9560f109c75668e1a13081e8eafdea32b2a2a4604487c869464651d5abdec207`.
 
@@ -60,5 +61,6 @@ The root cause starts at **1.0.006**, immediately after the last known-good 1.0.
 - Only after the private release assets passed those checks, the old channel's `main/version.txt` was advanced from 1006 to exactly `1007\n`; read-back verification passed.
 - The 1.0.005 handoff confirms the old updater had previously received a configured read token, so no new credential was added or requested.
 - Source and patch record commit: `afe03b9` (`Restore-MA-AutoUpdate-compatibility-bridge`), pushed to `siny-dev/MA` main before publishing.
+- The follow-up sequential-version comparison and its result were added to this log and pushed as `b4ed67a` (`Record-MA-1.0.21-bridge-outcome`).
 
 **Status:** The old 1.0.004/1.0.005 package identity now has a verified update candidate staged in its existing channel. The recovered records do not establish that the 1.0.005 app itself was installed on the phone; this log does not claim a new phone-side install result. A newer `com.siny.apps.ma_3c44c3e1b8` installation remains a distinct Android package and cannot be converted in place by this bridge.
