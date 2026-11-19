@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -22,6 +23,7 @@ JAVA_HOME = TOOLCHAIN / "jdk17" / "jdk-17.0.21+9"
 ANDROID_HOME = TOOLCHAIN / "android-sdk"
 GRADLE_USER_HOME = TOOLCHAIN / "gradle-home"
 APKSIGNER_JAR = ANDROID_HOME / "build-tools" / "36.0.0" / "lib" / "apksigner.jar"
+AAPT = ANDROID_HOME / "build-tools" / "36.0.0" / "aapt.exe"
 API_ROOT = f"https://api.github.com/repos/{REPOSITORY}"
 USER_AGENT = "MA-GitHub-Release/1"
 EXPECTED_SIGNER_SHA256 = "d2206ba8af559c091b82d7dd65e16f597629c361c623f93f0da10a5a43c84679"
@@ -145,6 +147,30 @@ def verify_local_apk_signature(apk_path: Path):
         raise GitHubError("릴리스 APK 서명 인증서가 기존 MA 설치본과 다릅니다.")
 
 
+def verify_apk_manifest_identity(apk_path: Path, manifest: dict):
+    if not AAPT.is_file():
+        raise GitHubError("Android SDK aapt.exe is missing.")
+    result = subprocess.run(
+        [str(AAPT), "dump", "badging", str(apk_path)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    package = re.search(
+        r"^package: name='([^']+)' versionCode='(\d+)' versionName='([^']*)'",
+        result.stdout,
+        re.MULTILINE,
+    )
+    if result.returncode or not package:
+        raise GitHubError("Published APK package metadata cannot be read.")
+    if (
+        package.group(1) != manifest.get("package_name")
+        or int(package.group(2)) != manifest.get("version_code")
+        or package.group(3) != manifest.get("version")
+    ):
+        raise GitHubError("Published APK package/version does not match its manifest.")
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, new_url):
         return None
@@ -234,9 +260,14 @@ def verify_release(token: str, app_id: str, expected_version: str | None = None)
     digest = hashlib.sha256(apk).hexdigest()
     if len(apk) != manifest["size"] or digest != manifest.get("sha256"):
         raise GitHubError("GitHub에 저장된 APK의 크기 또는 SHA-256이 manifest와 다릅니다.")
+    with tempfile.TemporaryDirectory(prefix="ma-release-verify-") as temporary:
+        apk_path = Path(temporary) / apk_name
+        apk_path.write_bytes(apk)
+        verify_local_apk_signature(apk_path)
+        verify_apk_manifest_identity(apk_path, manifest)
     print(
-        f"Verified {release['tag_name']}: {len(apk)} bytes, SHA-256 {digest}; "
-        f"manifest and APK assets match."
+        f"Verified {release['tag_name']}: {len(apk)} bytes; manifest size/SHA, "
+        f"APK package/version and pinned v1+v2 signer match."
     )
     latest = api_request(token, "GET", f"{API_ROOT}/releases/latest")
     print(f"Repository latest release remains {latest.get('tag_name', '(none)')}.")
