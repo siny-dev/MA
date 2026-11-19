@@ -82,3 +82,29 @@ The root cause starts at **1.0.006**, immediately after the last known-good 1.0.
 - The `MA_A34_Sim` AVD exists, but this PC has no attached ADB device and no Android Emulator Hypervisor Driver. The x86_64 AVD could not boot with acceleration; CPU-only startup remained offline and crashed.
 - An ARM system image would allow a different emulator path, but `sdkmanager` stopped at Google's SDK license prompt. The license was not accepted. No actual Android runtime install or patch was performed in this attempt.
 - Result: artifact and policy sequence **PASS**; Android runtime sequence **NOT RUN** because this PC's emulator lacks acceleration. No phone action was requested or performed.
+
+### Sequential emulator runtime attempt — 2026-11-20
+
+- Installed Android Emulator Hypervisor Driver 2.2 locally. `emulator -accel-check` returned `AEHD (version 2.2) is installed and usable`; booted `MA_A34_Sim` (Android 14, x86_64).
+- Installed historical MA 1.0.003 into the emulator only. Android reports package `com.doumi.helper`, versionCode `1004`, versionName `1.0.003`, and the original pinned signer. The app's home and Settings screens opened.
+- Reproduced the legacy update setup path on a clean emulator: Update check opens the repository connection dialog. A tokenless connection attempt to public `siny-dev/MA` was rejected by that legacy app with “저장소 연결을 저장하지 못했어요. 입력 내용을 확인해 주세요.” The installed version remained 1.0.003 / code 1004. This is a failed bootstrap test; it does not verify an APK download or update install.
+- Enabled MA's Android “Install unknown apps” permission in the emulator. No update was installed as a result. No phone was connected or changed.
+- Finding to resolve: the historical app's first connection requires a read-only token even for the public MA repository, so a clean legacy install cannot bootstrap through the no-token public-release path. The current 1.0.23 release and its artifact checks do not by themselves prove this legacy path works.
+
+### MA 1.0.23 update screen runtime check — 2026-11-20
+
+- Installed MA 1.0.23 (versionCode 1009) over the historical 1.0.003 installation in `MA_A34_Sim`; Android retained package `com.doumi.helper` and launched the updated app successfully. This was an emulator-only in-place ADB install, not an AutoUpdate install.
+- Opened the running app's AutoUpdate screen. It displayed installed version `1.0.23 (1009)`, the configured public source `GitHub Releases (siny-dev/MA)`, and latest published version `1.0.23 (1009)`. This confirms the app loaded its public repository configuration and obtained the current release metadata without asking for a token.
+- Tapped **지금 업데이트 확인**. The screen remained at latest version `1.0.23 (1009)` with no SHA/signature or repository-connection error. Android still reports installed version `1.0.23` / code `1009`.
+- Because there is no newer release in the channel, this run did not exercise APK download, signature verification of a newer candidate, Android install prompt, or the resulting version change. It therefore does not verify the complete patch-install path or phone behavior.
+
+### MA 1.0.24 patch — AutoUpdate installer session fix — 2026-11-20
+
+- Cause confirmed on Android: PackageInstaller.Session.commit() ran before the openWrite() output stream closed. The platform rejected the session with SecurityException: Files still open, which the app incorrectly surfaced as a generic update-file access error.
+- Code change: flush/fsync and close both APK streams before committing the still-open installer session.
+- Unit verification: :app:testDebugUnitTest passed, 334/334.
+- End-to-end emulator verification: built matching debug-signed 1.0.22 and 1.0.23 variants, served the candidate through a temporary local manifest, and exercised download → SHA/package/signer verification → PackageInstaller confirmation → install. Android displayed its normal update confirmation; after confirming, the emulator reported MA 1.0.23 (1009). This is an emulator test, not a phone result.
+- Published GitHub release `v1.0.24` was remotely verified: package `com.doumi.helper`, versionCode `1010`, 1,241,530 bytes, SHA-256 `a7dde096cea16aeaa803e13f99043acf724749a15cb73e4a7b2af5ed9118b8ad`, pinned v1/v2 signer. The local release APK is byte-for-byte the verified asset.
+- Emulator production-path check: installed the official signed `v1.0.23` (1009), allowed its Android install-from-source setting, downloaded and verified official `v1.0.24`, then pressed `업데이트 적용`. The emulator remained at 1.0.23 and showed the same generic security error; no installer confirmation appeared. The v1.0.23 tag source confirms why: it invokes `Session.commit()` before closing the `openWrite()` stream. That installed binary cannot apply the fix contained in 1.0.24 through its own broken installer.
+- Installed the exact verified `v1.0.24` APK by ADB on the emulator only; Android reported versionCode 1010 and the MA app launched. This checks the released binary itself, but is not an AutoUpdate transition. No physical phone was connected or changed.
+- Provenance note: remote tag `v1.0.24` currently points at the pre-fix source commit, although the remotely verified APK was built from the fixed working tree. The source fix and this record are now recorded on main for reproducibility; the existing release tag was not rewritten.

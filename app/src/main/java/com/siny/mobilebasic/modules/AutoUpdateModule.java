@@ -413,8 +413,14 @@ public final class AutoUpdateModule {
             PackageInstaller.SessionParams params=new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
             params.setAppPackageName(context.getPackageName());params.setSize(apk.length());
             int sessionId=installer.createSession(params);
-            try(PackageInstaller.Session session=installer.openSession(sessionId);FileInputStream input=new FileInputStream(apk);OutputStream output=session.openWrite("mobile-update.apk",0,apk.length())){
-                byte[] buffer=new byte[64*1024];int n;while((n=input.read(buffer))!=-1)output.write(buffer,0,n);session.fsync(output);
+            try(PackageInstaller.Session session=installer.openSession(sessionId)){
+                // PackageInstaller refuses commit while any session write stream remains open.
+                // Finish and fsync the payload first; then commit the sealed session.
+                try(FileInputStream input=new FileInputStream(apk);
+                        OutputStream output=session.openWrite("mobile-update.apk",0,apk.length())){
+                    byte[] buffer=new byte[64*1024];int n;while((n=input.read(buffer))!=-1)output.write(buffer,0,n);
+                    session.fsync(output);
+                }
                 Intent resultIntent=new Intent(context,UpdateStatusActivity.class).setAction(UpdateStatusActivity.ACTION_INSTALL_RESULT).putExtra(PackageInstaller.EXTRA_SESSION_ID,sessionId);
                 int flags=PendingIntent.FLAG_UPDATE_CURRENT;if(Build.VERSION.SDK_INT>=31)flags|=PendingIntent.FLAG_MUTABLE;
                 PendingIntent callback=PendingIntent.getActivity(context,sessionId,resultIntent,flags);
