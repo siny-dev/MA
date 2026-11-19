@@ -8,7 +8,8 @@ Each entry records the exact change, version/artifact, verification performed, o
 
 | Version | APK identity | Update artifact result | Finding |
 | --- | --- | --- | --- |
-| 1.0.005 | `com.doumi.helper`, versionCode 1006, original signer SHA-256 `5f5951336912c1c8772c96fccc88799ba96beba2488fe3296d22c23469da8987` | v1/v2/v3 signature verification passes | Last known-good baseline. The existing handoff and build-verification record says the 1.0.004 → 1.0.005 update was confirmed on the phone. |
+| 1.0.004 | `com.doumi.helper`, versionCode 1005, original signer SHA-256 `5f5951336912c1c8772c96fccc88799ba96beba2488fe3296d22c23469da8987` | Historical signed APK verified; matching release record says the user confirmed automatic update to 1.0.004 | Last phone-confirmed automatic-update version in the recovered records. |
+| 1.0.005 | `com.doumi.helper`, versionCode 1006, original signer SHA-256 `5f5951336912c1c8772c96fccc88799ba96beba2488fe3296d22c23469da8987` | APK and archived latest.json verified; original signing identity retained | Last known-good release artifact before the break. The recovered 1.0.005 handoff explicitly marks phone installation/automatic install as not verified; do not count it as a phone-confirmed update. |
 | 1.0.006 | `com.siny.apps.ma_3c44c3e1b8`, versionCode 5 | Manifest size and SHA-256 match; APK signature verification fails (`Missing META-INF/MANIFEST.MF`; no valid v1/v2/v3 signature). The old-format `latest.json` is absent. | **First known broken MA release.** It changed package identity and reset Android versionCode below 1006, and its APK was unsigned. The 1.0.005 updater cannot accept it as an in-place update. |
 | 1.0.007 | `com.siny.apps.ma_3c44c3e1b8`, versionCode 6 | Manifest size/SHA match; APK is unsigned; old-format `latest.json` absent | Same break continued. |
 | 1.0.008 | `com.siny.apps.ma_3c44c3e1b8`, versionCode 7 | Manifest size/SHA match; APK is unsigned | First archived public MA release; same break continued. |
@@ -40,15 +41,24 @@ The root cause starts at **1.0.006**, immediately after the last known-good 1.0.
 - Restored MA's last known-good Android package ID, `com.doumi.helper`, in the app metadata and packaged metadata. The 1.0.006 release changed this to `com.siny.apps.ma_3c44c3e1b8`, which made it a different Android app.
 - Restored the original 1.0.005 signing certificate for the release build and raised Android `versionCode` from 1006 to 1007. The bridge's displayed version is 1.0.21.
 - Changed the release publisher to build a signed release APK, pin the signing certificate by package identity, and record the signer digest in the release manifest.
+- Added `tools/autoupdate/publish-legacy-bridge.py`: by default it only validates; with `--publish` it verifies assets, publishes the old-format bridge, confirms remote downloads, and updates the old numeric version pointer last.
 - Updated the module-contract and local-feed checks for the restored package ID.
 - Added PC-only compatibility checks against the actual 1.0.005 APK and the archived 1.0.005 `UpdatePolicy.java`, plus a generated old-channel `latest.json` using the exact historical six-field schema.
 
 **Verification performed:**
 
 - `:app:testDebugUnitTest` and `assembleRelease`: passed.
-- APK identity comparison: 1.0.005 (`com.doumi.helper`, code 1006, signer `5f5951…`) → candidate 1.0.21 (same package, code 1007, same signer): passed.
-- Historical 1.0.005 `UpdatePolicy` Java checks: matching package, higher version code, tag, actual APK SHA/size, and signer accepted; a reset version code, mismatched tag, and changed signer were rejected.
+- APK identity comparison: phone-confirmed 1.0.004 (`com.doumi.helper`, code 1005) and the 1.0.005 release artifact (code 1006) → candidate 1.0.21 (same package, code 1007, original signer `5f5951…`): passed.
+- Historical 1.0.005 `UpdatePolicy` Java checks: it accepts the bridge from both 1.0.004 and 1.0.005 when package, higher version code, tag, actual APK SHA/size, and signer match; a reset version code, mismatched tag, and changed signer were rejected.
 - Historical `latest.json` field schema: exact match.
-- Candidate APK: 1,241,269 bytes; SHA-256 `1d1fa360cc8fc0f639ec3790d9ffee10afc6d234b9bcb92a342e2273d8f03634`.
+- Final candidate APK: 1,241,274 bytes; SHA-256 `9560f109c75668e1a13081e8eafdea32b2a2a4604487c869464651d5abdec207`.
 
-**Status:** Local artifact and legacy policy checks pass. Remote GitHub release and old-channel version pointer have not yet been published; no phone installation is claimed by this entry.
+**Publication and outcome:**
+
+- Public `siny-dev/MA` release `v1.0.21` published. The remote APK was downloaded again and its exact size/SHA, `com.doumi.helper` package, version `1.0.21`/code 1007, v1/v2 signature, and original signer were verified.
+- Compatibility release `v1.0.21` published to the historical `siny-dev/ma-updates` channel with the old APK asset name and old six-field `latest.json`. Authenticated remote downloads exactly match the locally verified APK and manifest.
+- Only after the private release assets passed those checks, the old channel's `main/version.txt` was advanced from 1006 to exactly `1007\n`; read-back verification passed.
+- The 1.0.005 handoff confirms the old updater had previously received a configured read token, so no new credential was added or requested.
+- Source and patch record commit: `afe03b9` (`Restore-MA-AutoUpdate-compatibility-bridge`), pushed to `siny-dev/MA` main before publishing.
+
+**Status:** The old 1.0.004/1.0.005 package identity now has a verified update candidate staged in its existing channel. The recovered records do not establish that the 1.0.005 app itself was installed on the phone; this log does not claim a new phone-side install result. A newer `com.siny.apps.ma_3c44c3e1b8` installation remains a distinct Android package and cannot be converted in place by this bridge.
