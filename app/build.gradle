@@ -2,56 +2,32 @@ plugins {
     id 'com.android.application'
 }
 
-def appVersion = new groovy.json.JsonSlurper().parse(file('../version.json'))
-def appMetadata = new groovy.json.JsonSlurper().parse(file('../mobile-app.json'))
-def localUpdateManifestUrl = providers.gradleProperty('maUpdateManifestUrl').getOrElse('')
-def escapedUpdateManifestUrl = localUpdateManifestUrl.replace('\\', '\\\\').replace('"', '\\"')
-def githubUpdateRepository = (appMetadata.update_repository ?: '').toString()
-def escapedGithubUpdateRepository = githubUpdateRepository.replace('\\', '\\\\').replace('"', '\\"')
-def githubUpdateRepositoryPublic = appMetadata.update_repository_public == true
+def currentVersion = new groovy.json.JsonSlurper().parse(file('../version.json'))
+def appVersionCode = (project.findProperty('appVersionCode') ?: System.getenv('APP_VERSION_CODE') ?: currentVersion.version_code).toString().toInteger()
+def appVersionName = (project.findProperty('appVersionName') ?: System.getenv('APP_VERSION_NAME') ?: currentVersion.version).toString()
+def releaseSigningValues = [
+    System.getenv('ANDROID_KEYSTORE_PATH'),
+    System.getenv('ANDROID_KEYSTORE_PASSWORD'),
+    System.getenv('ANDROID_KEY_ALIAS'),
+    System.getenv('ANDROID_KEY_PASSWORD')
+]
+def releaseSigningConfigured = releaseSigningValues.every { it != null && !it.trim().isEmpty() }
 
 android {
     namespace 'com.siny.mobilebasic'
     compileSdk 37
 
-    // Debug builds remain development-signed unless the release script supplies
-    // the existing MA signing identity. Production releases must use that identity.
-    signingConfigs {
-        debug {
-            enableV1Signing true
-            enableV2Signing true
-        }
-        release {
-            def signingStore = providers.environmentVariable('MA_LEGACY_KEYSTORE').orNull
-            def signingAlias = providers.environmentVariable('MA_LEGACY_KEY_ALIAS').orNull
-            def signingStorePassword = providers.environmentVariable('MA_LEGACY_STORE_PASSWORD').orNull
-            def signingKeyPassword = providers.environmentVariable('MA_LEGACY_KEY_PASSWORD').orNull
-            if (signingStore && signingAlias && signingStorePassword && signingKeyPassword) {
-                storeFile file(signingStore)
-                storePassword signingStorePassword
-                keyAlias signingAlias
-                keyPassword signingKeyPassword
-            }
-            enableV1Signing true
-            enableV2Signing true
-            enableV3Signing true
-        }
+    defaultConfig {
+        applicationId 'com.siny.apps.ma_3c44c3e1b8'
+        minSdk 26
+        targetSdk 35
+        versionCode appVersionCode
+        versionName appVersionName
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
     buildFeatures {
         buildConfig true
-    }
-
-    defaultConfig {
-        applicationId appMetadata.application_id as String
-        minSdk 26
-        targetSdk 35
-        versionCode appVersion.version_code as int
-        versionName appVersion.version as String
-        buildConfigField 'String', 'LOCAL_UPDATE_MANIFEST_URL', '"' + escapedUpdateManifestUrl + '"'
-        buildConfigField 'String', 'GITHUB_UPDATE_REPOSITORY', '"' + escapedGithubUpdateRepository + '"'
-        buildConfigField 'boolean', 'GITHUB_UPDATE_REPOSITORY_PUBLIC', githubUpdateRepositoryPublic.toString()
-        testInstrumentationRunner 'android.test.InstrumentationTestRunner'
     }
 
     compileOptions {
@@ -59,22 +35,46 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    testOptions {
-        unitTests.returnDefaultValues = true
+    if (releaseSigningConfigured) {
+        signingConfigs {
+            release {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (releaseSigningConfigured) signingConfig signingConfigs.release
             minifyEnabled false
+        }
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+tasks.matching { it.name == 'assembleRelease' }.configureEach {
+    doFirst {
+        if (!releaseSigningConfigured) {
+            throw new GradleException('Signed release requires the Basic Tool release command and its locally protected signing key.')
+        }
+        if (appVersionCode <= 0 || !appVersionName.matches(/[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}/)) {
+            throw new GradleException('Release version name/code is invalid.')
         }
     }
 }
 
 dependencies {
-    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20250517'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
 }
 
 tasks.withType(Test).configureEach {

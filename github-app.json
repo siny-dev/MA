@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "app_name": "MA",
+  "app_id": "ma-3c44c3e1b8",
+  "app_code": "ma-3c44c3e1b8",
+  "application_id": "com.siny.apps.ma_3c44c3e1b8",
+  "platform": "android",
+  "repository_name": "MA",
+  "repository_url": "https://github.com/siny-dev/MA",
+  "update_manifest_url": "https://raw.githubusercontent.com/siny-dev/auto-update/main/feeds/ma-3c44c3e1b8/stable.json",
+  "module_repositories": {
+    "AutoSync": {
+      "repository": "siny-dev/AutoSync",
+      "branch": "main",
+      "data_path": "space/ma-3c44c3e1b8"
+    },
+    "AutoUpdate": {
+      "repository": "siny-dev/auto-update",
+      "branch": "main",
+      "manifest_path": "feeds/ma-3c44c3e1b8/stable.json",
+      "manifest_url": "https://raw.githubusercontent.com/siny-dev/auto-update/main/feeds/ma-3c44c3e1b8/stable.json"
+    }
+  },
+  "sync": {
+    "mode": "local-only",
+    "protocol": "autosync-v1",
+    "repository": "siny-dev/AutoSync",
+    "data_path": "space/ma-3c44c3e1b8"
+  },
+  "modules": [
+    {
+      "module_id": "AutoUpdate",
+      "version": "1.0.20",
+      "api_major": 1,
+      "manifest_sha256": "a384e32ba08dba00bac69d259cee2801d8b3844a5c29f90a4b335787b792c288"
+    },
+    {
+      "module_id": "AutoSync",
+      "version": "0.1.12",
+      "api_major": 1,
+      "manifest_sha256": "b418aebca2a391ef3342ee2e4c3323691d09e9833164d6fabc2b224ccc2eeab6"
+    }
+  ]
+}

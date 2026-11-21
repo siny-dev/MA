@@ -12,9 +12,7 @@ public final class UpdateJobService extends JobService {
         worker=new Thread(()->{
             try{
                 SecureSettings settings=new SecureSettings(this,AppIdentity.APP_ID);
-                AutoUpdateModule updater=new AutoUpdateModule(this,settings);
-                AutoUpdateModule.Result result=updater.checkAndDownload();
-                if("update-ready".equals(result.status))updater.installPendingFromBackground();
+                new AutoUpdateModule(this,settings).checkAndDownload();
             }finally{
                 if(!Thread.currentThread().isInterrupted())jobFinished(params,false);
             }

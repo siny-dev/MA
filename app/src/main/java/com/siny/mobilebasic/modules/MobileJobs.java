@@ -13,7 +13,15 @@ public final class MobileJobs {
 
     public static void schedule(Context context){
         JobScheduler scheduler=(JobScheduler)context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-        scheduleOne(scheduler,context,SyncJobService.class,SYNC_JOB_ID,AutoSyncModule.BACKGROUND_INTERVAL_MS);
+        boolean remoteSyncConfigured;
+        try {
+            remoteSyncConfigured = !new SecureSettings(context, com.siny.mobilebasic.AppIdentity.APP_ID)
+                    .serverUrl().trim().isEmpty();
+        } catch (RuntimeException e) {
+            remoteSyncConfigured = false;
+        }
+        if(remoteSyncConfigured) scheduleOne(scheduler,context,SyncJobService.class,SYNC_JOB_ID,AutoSyncModule.BACKGROUND_INTERVAL_MS);
+        else scheduler.cancel(SYNC_JOB_ID);
         scheduleOne(scheduler,context,UpdateJobService.class,UPDATE_JOB_ID,AutoUpdateModule.BACKGROUND_INTERVAL_MS);
     }
 

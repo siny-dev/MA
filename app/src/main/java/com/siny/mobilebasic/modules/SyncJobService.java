@@ -13,8 +13,9 @@ public final class SyncJobService extends JobService {
         worker=new Thread(()->{
             MobileStore store=null;
             try{
-                store=new MobileStore(this);
                 SecureSettings settings=new SecureSettings(this,AppIdentity.APP_ID);
+                if(settings.serverUrl().trim().isEmpty()) return;
+                store=new MobileStore(this);
                 new AutoSyncModule(this,store,settings).syncOnce();
             }finally{
                 if(store!=null)store.close();

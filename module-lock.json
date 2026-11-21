@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "modules": [
+    {
+      "module_id": "AutoUpdate",
+      "version": "1.0.20",
+      "api_major": 1,
+      "manifest_sha256": "a384e32ba08dba00bac69d259cee2801d8b3844a5c29f90a4b335787b792c288"
+    },
+    {
+      "module_id": "AutoSync",
+      "version": "0.1.12",
+      "api_major": 1,
+      "manifest_sha256": "b418aebca2a391ef3342ee2e4c3323691d09e9833164d6fabc2b224ccc2eeab6"
+    }
+  ]
+}

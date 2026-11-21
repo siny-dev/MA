@@ -1,7 +1,3 @@
 <resources>
     <string name="app_name">MA</string>
-    <string name="ma_naver_guide_accessibility_label">MA 네이버 안내 시작</string>
-    <string name="ma_naver_guide_accessibility_description">사용자가 MA에서 목적지를 확인한 뒤, 네이버 지도 안의 ‘안내 시작’ 버튼만 한 번 누릅니다. 다른 앱 화면 내용을 저장하거나 전송하지 않습니다.</string>
-    <string name="ma_kakao_taxi_accessibility_label">MA 카카오 T 목적지 및 호출 보조</string>
-    <string name="ma_kakao_taxi_accessibility_description">MA에서 사용자가 목적지를 맞다고 확인하면 카카오 T에 해당 주소를 입력하고 이름·주소가 일치하는 목적지를 선택합니다. 선택한 목적지가 화면에 보이고 호출 버튼 하나가 정확히 일치할 때만 그 버튼을 누릅니다. 출발지·차량·요금·결제는 선택하거나 변경하지 않습니다.</string>
 </resources>

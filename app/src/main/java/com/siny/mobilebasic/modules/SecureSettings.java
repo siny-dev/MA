@@ -6,6 +6,11 @@ import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
 
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+
 import java.nio.ByteBuffer;
 import java.security.KeyStore;
 
@@ -20,111 +25,50 @@ public final class SecureSettings {
     private static final String KEY_ALIAS_PREFIX = "com.siny.mobilebasic.token.";
     private static final String SERVER_URL = "autosync_server_url";
     private static final String UPDATE_URL = "autoupdate_manifest_url";
-    private static final String GITHUB_UPDATE_REPOSITORY = "github_update_repository";
-    private static final String ENCRYPTED_GITHUB_UPDATE_TOKEN = "github_update_token_gcm";
-    private static final String GEMINI_PROXY_URL = "gemini_proxy_url";
     private static final String ENCRYPTED_TOKEN = "autosync_token_gcm";
-    private static final String ENCRYPTED_GEMINI_API_KEY = "gemini_api_key_gcm";
-    private static final String ENCRYPTED_CLOVA_STUDIO_API_KEY = "clova_studio_api_key_gcm";
-    private static final String ENCRYPTED_NAVER_CLIENT_ID = "naver_api_client_id_gcm";
-    private static final String ENCRYPTED_NAVER_CLIENT_SECRET = "naver_api_client_secret_gcm";
     private final SharedPreferences prefs;
     private final String keyAlias;
+    private final String defaultServerUrl;
+    private final String defaultUpdateUrl;
 
     public SecureSettings(Context context, String appId) {
-        prefs = context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        Context app = context.getApplicationContext();
+        prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         keyAlias = KEY_ALIAS_PREFIX + appId;
+        defaultServerUrl = assetValue(app, "autosync_server_url");
+        defaultUpdateUrl = assetValue(app, "update_manifest_url");
     }
 
-    public String serverUrl() { return prefs.getString(SERVER_URL, ""); }
-    public String updateManifestUrl() { return prefs.getString(UPDATE_URL, ""); }
-    public String githubUpdateRepository() { return prefs.getString(GITHUB_UPDATE_REPOSITORY, ""); }
-    public String geminiProxyUrl() { return prefs.getString(GEMINI_PROXY_URL, ""); }
-    public void setUpdateManifestUrlIfEmpty(String value) {
-        if (value == null || value.trim().isEmpty() || !updateManifestUrl().trim().isEmpty()) return;
-        prefs.edit().putString(UPDATE_URL, value.trim()).apply();
-    }
-    public void setGithubUpdateRepositoryIfEmpty(String value) {
-        if (value == null || value.trim().isEmpty() || !githubUpdateRepository().trim().isEmpty()) return;
-        prefs.edit().putString(GITHUB_UPDATE_REPOSITORY, value.trim()).apply();
-    }
-    public void migrateGithubUpdateRepository(String previousDefault, String currentDefault) {
-        if (previousDefault == null || currentDefault == null || currentDefault.trim().isEmpty()) return;
-        String current = githubUpdateRepository().trim();
-        if (current.isEmpty() || current.equalsIgnoreCase(previousDefault.trim())) {
-            prefs.edit().putString(GITHUB_UPDATE_REPOSITORY, currentDefault.trim())
-                    .remove(ENCRYPTED_GITHUB_UPDATE_TOKEN).apply();
+    public String serverUrl() { return prefs.getString(SERVER_URL, defaultServerUrl); }
+    public String updateManifestUrl() { return prefs.getString(UPDATE_URL, defaultUpdateUrl); }
+
+    private static String assetValue(Context context, String key) {
+        try (InputStream input = context.getAssets().open("mobile-app.json");
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            JSONObject config = new JSONObject(output.toString("UTF-8"));
+            String value = config.optString(key, "").trim();
+            if (value.isEmpty() && "autosync_server_url".equals(key)) {
+                JSONObject sync = config.optJSONObject("sync");
+                if (sync != null) value = sync.optString("base_url", "").trim();
+            }
+            return value;
+        } catch (Exception ignored) {
+            return "";
         }
-    }
-    public String githubUpdateToken() {
-        String value = prefs.getString(ENCRYPTED_GITHUB_UPDATE_TOKEN, "");
-        return value.isEmpty() ? "" : decrypt(value);
-    }
-    public void saveGithubUpdateConfig(String repository, String token, boolean clearToken) {
-        String current = clearToken ? "" : token == null || token.isEmpty()
-                ? githubUpdateToken() : token.trim();
-        String encrypted = current.isEmpty() ? "" : encrypt(current);
-        prefs.edit().putString(GITHUB_UPDATE_REPOSITORY,
-                repository == null ? "" : repository.trim())
-                .putString(ENCRYPTED_GITHUB_UPDATE_TOKEN, encrypted).apply();
     }
     public String autosyncToken() {
         String value = prefs.getString(ENCRYPTED_TOKEN, "");
         return value.isEmpty() ? "" : decrypt(value);
     }
-    public String geminiApiKey() {
-        String value = prefs.getString(ENCRYPTED_GEMINI_API_KEY, "");
-        return value.isEmpty() ? "" : decrypt(value);
-    }
-    public String clovaStudioApiKey() {
-        String value = prefs.getString(ENCRYPTED_CLOVA_STUDIO_API_KEY, "");
-        return value.isEmpty() ? "" : decrypt(value);
-    }
-    public void saveClovaStudioApiKey(String apiKey) {
-        String value = apiKey == null ? "" : apiKey.trim();
-        prefs.edit().putString(ENCRYPTED_CLOVA_STUDIO_API_KEY,
-                value.isEmpty() ? "" : encrypt(value)).apply();
-    }
-    public String naverApiClientId() {
-        String value = prefs.getString(ENCRYPTED_NAVER_CLIENT_ID, "");
-        return value.isEmpty() ? "" : decrypt(value);
-    }
-    public String naverApiClientSecret() {
-        String value = prefs.getString(ENCRYPTED_NAVER_CLIENT_SECRET, "");
-        return value.isEmpty() ? "" : decrypt(value);
-    }
 
-    public void save(String serverUrl, String token, String updateManifestUrl, String geminiProxyUrl) {
+    public void save(String serverUrl, String token, String updateManifestUrl) {
         String encrypted = token == null || token.isEmpty() ? "" : encrypt(token);
         prefs.edit().putString(SERVER_URL, serverUrl == null ? "" : serverUrl.trim())
                 .putString(ENCRYPTED_TOKEN, encrypted)
                 .putString(UPDATE_URL, updateManifestUrl == null ? "" : updateManifestUrl.trim())
-                .putString(GEMINI_PROXY_URL, geminiProxyUrl == null ? "" : geminiProxyUrl.trim())
-                .apply();
-    }
-
-    public void save(String serverUrl, String token, String updateManifestUrl, String geminiProxyUrl,
-                     String geminiApiKey) {
-        save(serverUrl, token, updateManifestUrl, geminiProxyUrl, geminiApiKey,
-                naverApiClientId(), naverApiClientSecret());
-    }
-
-    public void save(String serverUrl, String token, String updateManifestUrl, String geminiProxyUrl,
-                     String geminiApiKey, String naverClientId, String naverClientSecret) {
-        String encrypted = token == null || token.isEmpty() ? "" : encrypt(token);
-        String encryptedGeminiKey = geminiApiKey == null || geminiApiKey.isEmpty()
-                ? "" : encrypt(geminiApiKey.trim());
-        String encryptedNaverClientId = naverClientId == null || naverClientId.isEmpty()
-                ? "" : encrypt(naverClientId.trim());
-        String encryptedNaverClientSecret = naverClientSecret == null || naverClientSecret.isEmpty()
-                ? "" : encrypt(naverClientSecret.trim());
-        prefs.edit().putString(SERVER_URL, serverUrl == null ? "" : serverUrl.trim())
-                .putString(ENCRYPTED_TOKEN, encrypted)
-                .putString(UPDATE_URL, updateManifestUrl == null ? "" : updateManifestUrl.trim())
-                .putString(GEMINI_PROXY_URL, geminiProxyUrl == null ? "" : geminiProxyUrl.trim())
-                .putString(ENCRYPTED_GEMINI_API_KEY, encryptedGeminiKey)
-                .putString(ENCRYPTED_NAVER_CLIENT_ID, encryptedNaverClientId)
-                .putString(ENCRYPTED_NAVER_CLIENT_SECRET, encryptedNaverClientSecret)
                 .apply();
     }
 
@@ -163,7 +107,7 @@ public final class SecureSettings {
             packed.putInt(iv.length).put(iv).put(body);
             return Base64.encodeToString(packed.array(), Base64.NO_WRAP);
         } catch (Exception e) {
-            throw new IllegalStateException("Could not encrypt the app credential", e);
+            throw new IllegalStateException("Could not encrypt the AutoSync credential", e);
         }
     }
 
