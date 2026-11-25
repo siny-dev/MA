@@ -13,7 +13,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -344,13 +343,16 @@ def _extract_archive(project: Path, source_ref: str, destination: Path) -> None:
 
 
 def _stable_version(mapping: dict[str, Any], app_id: str, package_name: str) -> tuple[dict[str, Any], int]:
-    _, _, _, url = update_target(mapping, app_id)
-    request = urllib.request.Request(url + "?_=" + str(time.time_ns()),
-                                     headers={"Accept": "application/json", "Cache-Control": "no-cache"})
+    owner, repository, path, _ = update_target(mapping, app_id)
+    url = (f"https://api.github.com/repos/{owner}/{repository}/contents/"
+           + urllib.parse.quote(path, safe="/") + "?ref=main")
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            raw = response.read(256 * 1024 + 1)
-    except (urllib.error.URLError, TimeoutError) as exc:
+        token = _github_token()
+        item = _api("GET", url, token)
+        if not isinstance(item, dict) or item.get("encoding") != "base64" or not isinstance(item.get("content"), str):
+            raise ReleaseError("AutoUpdate stable feed contents could not be read from the fixed repository.")
+        raw = base64.b64decode(item["content"], validate=False)
+    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         raise ReleaseError("AutoUpdate stable feed could not be read from the fixed repository.") from exc
     if len(raw) > 256 * 1024:
         raise ReleaseError("AutoUpdate stable feed is too large.")

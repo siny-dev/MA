@@ -119,24 +119,17 @@ class MobileReleaseTests(unittest.TestCase):
             }},
         }
 
-        class Response:
-            def __init__(self, data):
-                self.data = data
-            def __enter__(self):
-                return self
-            def __exit__(self, *exc):
-                return False
-            def read(self, size=-1):
-                return self.data[:size]
-
         correct = json.dumps({"schema": 1, "platform": "android", "app_id": "alarm-123",
                               "package_name": "com.siny.apps.alarm_123", "version_code": 8}).encode()
         wrong_package = json.dumps({"schema": 1, "platform": "android", "app_id": "alarm-123",
                                     "package_name": "com.siny.apps.other", "version_code": 8}).encode()
-        with patch.object(release.urllib.request, "urlopen", side_effect=[Response(correct), Response(wrong_package)]) as open_url:
+        entries = [{"encoding": "base64", "content": __import__("base64").b64encode(data).decode()}
+                   for data in (correct, wrong_package)]
+        with (patch.object(release, "_github_token", return_value="test-token"),
+              patch.object(release, "_api", side_effect=entries) as api):
             self.assertEqual(8, release._stable_version(mapping, "alarm-123", "com.siny.apps.alarm_123")[1])
-            self.assertIn("raw.githubusercontent.com/siny-dev/auto-update/main/feeds/alarm-123/stable.json?_=",
-                          open_url.call_args_list[0].args[0].full_url)
+            self.assertIn("api.github.com/repos/siny-dev/auto-update/contents/feeds/alarm-123/stable.json?ref=main",
+                          api.call_args_list[0].args[1])
             with self.assertRaisesRegex(release.ReleaseError, "identity"):
                 release._stable_version(mapping, "alarm-123", "com.siny.apps.alarm_123")
 
