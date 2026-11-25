@@ -144,8 +144,9 @@ def _run(command: list[str], *, cwd: Path | None = None, env: dict[str, str] | N
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ReleaseError(f"Command could not finish: {Path(command[0]).name}") from exc
     if result.returncode:
-        detail = (result.stderr or result.stdout).strip().splitlines()
-        raise ReleaseError(f"{Path(command[0]).name} failed: " + (detail[-1][:350] if detail else "unknown error"))
+        detail = (result.stdout + "\n" + result.stderr).strip().splitlines()
+        tail = "\n".join(detail[-12:])
+        raise ReleaseError(f"{Path(command[0]).name} failed:\n" + (tail[:2400] if tail else "unknown error"))
     return result.stdout.strip()
 
 
