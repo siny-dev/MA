@@ -11,6 +11,7 @@ set "TASK=%~1"
 set "INSTRUMENTATION_ARGS="
 if defined LOCAL_UPDATE_MANIFEST_URL set "INSTRUMENTATION_ARGS=%INSTRUMENTATION_ARGS% -Pandroid.testInstrumentationRunnerArguments.localUpdateManifestUrl=%LOCAL_UPDATE_MANIFEST_URL%"
 if defined LOCAL_UPDATE_VERSION_CODE set "INSTRUMENTATION_ARGS=%INSTRUMENTATION_ARGS% -Pandroid.testInstrumentationRunnerArguments.localUpdateVersionCode=%LOCAL_UPDATE_VERSION_CODE%"
+if defined LOCAL_UPDATE_TEST_CLASS set "INSTRUMENTATION_ARGS=%INSTRUMENTATION_ARGS% -Pandroid.testInstrumentationRunnerArguments.class=%LOCAL_UPDATE_TEST_CLASS%"
 if not defined TASK set "TASK=all"
 if /I not "%TASK%"=="all" if /I not "%TASK%"=="test" if /I not "%TASK%"=="instrumented" if /I not "%TASK%"=="debug" if /I not "%TASK%"=="release" goto usage
 if not exist "%JAVA_HOME%\bin\java.exe" goto toolchain_missing
