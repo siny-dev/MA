@@ -135,7 +135,7 @@ class MobileReleaseTests(unittest.TestCase):
                                     "package_name": "com.siny.apps.other", "version_code": 8}).encode()
         with patch.object(release.urllib.request, "urlopen", side_effect=[Response(correct), Response(wrong_package)]) as open_url:
             self.assertEqual(8, release._stable_version(mapping, "alarm-123", "com.siny.apps.alarm_123")[1])
-            self.assertIn("raw.githubusercontent.com/siny-dev/auto-update/main/feeds/alarm-123/stable.json",
+            self.assertIn("raw.githubusercontent.com/siny-dev/auto-update/main/feeds/alarm-123/stable.json?_=",
                           open_url.call_args_list[0].args[0].full_url)
             with self.assertRaisesRegex(release.ReleaseError, "identity"):
                 release._stable_version(mapping, "alarm-123", "com.siny.apps.alarm_123")

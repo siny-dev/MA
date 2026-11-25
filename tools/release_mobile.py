@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -344,7 +345,8 @@ def _extract_archive(project: Path, source_ref: str, destination: Path) -> None:
 
 def _stable_version(mapping: dict[str, Any], app_id: str, package_name: str) -> tuple[dict[str, Any], int]:
     _, _, _, url = update_target(mapping, app_id)
-    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    request = urllib.request.Request(url + "?_=" + str(time.time_ns()),
+                                     headers={"Accept": "application/json", "Cache-Control": "no-cache"})
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
             raw = response.read(256 * 1024 + 1)
