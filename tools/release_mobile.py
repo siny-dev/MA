@@ -419,11 +419,11 @@ def _project_version_code(project: Path) -> int:
 def _rollback_candidate(project: Path, source_ref: str) -> tuple[str, str, int]:
     if not SOURCE_REF_RE.fullmatch(source_ref):
         raise ReleaseError("Rollback source must be a Git commit, tag, or branch name without option syntax.")
-    app, _, _, _ = _load_identity(project)
+    app, mapping, _, _ = _load_identity(project)
     app_id = str(app["app_id"])
     package = str(app["application_id"])
     _assert_publishable_tree(project)
-    _, stable_code = _stable_version(project, app_id, package)
+    _, stable_code = _stable_version(mapping, app_id, package)
     if stable_code >= 2_100_000_000:
         raise ReleaseError("Android versionCode limit reached; a rollback update cannot be created.")
     version_name, _ = _source_version_details(project, source_ref)

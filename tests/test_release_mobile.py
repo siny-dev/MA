@@ -139,10 +139,11 @@ class MobileReleaseTests(unittest.TestCase):
             identity = ({"app_id": "alarm-123", "application_id": "com.siny.apps.alarm_123"}, {}, "siny-dev", "alarm")
             with (patch.object(release, "_load_identity", return_value=identity),
                   patch.object(release, "_assert_publishable_tree", return_value="main-commit"),
-                  patch.object(release, "_stable_version", return_value=({}, 25)),
+                  patch.object(release, "_stable_version", return_value=({}, 25)) as stable_version,
                   patch.object(release, "_candidate", return_value="candidate-url") as candidate):
                 result = release._rollback_candidate(root, source_ref)
             self.assertEqual(("candidate-url", "1.0.7", 1017), result)
+            stable_version.assert_called_once_with({}, "alarm-123", "com.siny.apps.alarm_123")
             candidate.assert_called_once_with(root, "1.0.7", 1017, source_ref)
 
     def test_candidate_cannot_be_created_at_the_current_stable_version_code(self):
