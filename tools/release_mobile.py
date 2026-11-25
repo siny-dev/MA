@@ -417,6 +417,21 @@ def _project_version_code(project: Path) -> int:
         return 0
 
 
+def _write_build_version(project: Path, version_name: str, version_code: int) -> None:
+    validate_version(version_name, version_code)
+    for relative in ("version.json", "app/src/main/assets/version.json"):
+        path = project / relative
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ReleaseError(f"Build source has no valid {relative} version metadata.") from exc
+        if not isinstance(value, dict) or value.get("schema") != 1:
+            raise ReleaseError(f"Build source {relative} has an unsupported version schema.")
+        value["version"] = version_name
+        value["version_code"] = version_code
+        path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def _rollback_candidate(project: Path, source_ref: str) -> tuple[str, str, int]:
     if not SOURCE_REF_RE.fullmatch(source_ref):
         raise ReleaseError("Rollback source must be a Git commit, tag, or branch name without option syntax.")
@@ -493,6 +508,7 @@ def _candidate(project: Path, version_name: str, version_code: int, source_ref: 
     with tempfile.TemporaryDirectory(prefix="siny-mobile-release-") as temp_name:
         build_root = Path(temp_name) / "project"
         _extract_archive(project, ref, build_root)
+        _write_build_version(build_root, version_name, version_code)
         build_script = build_root / "build-mobile.cmd"
         if not build_script.is_file():
             shared_builder = project / "build-mobile.cmd"

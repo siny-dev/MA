@@ -64,6 +64,22 @@ class MobileReleaseTests(unittest.TestCase):
             release.build_release_metadata("alarm-123", "com.siny.apps.alarm_123", "2.1.0", 9,
                                            "../app.apk", digest)
 
+    def test_release_build_rewrites_both_version_manifests_for_historical_sources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "app" / "src" / "main" / "assets").mkdir(parents=True)
+            original = {"schema": 1, "app_id": "alarm-123", "version": "0.9.0", "version_code": 5}
+            (root / "version.json").write_text(json.dumps(original), encoding="utf-8")
+            (root / "app/src/main/assets/version.json").write_text(json.dumps(original), encoding="utf-8")
+
+            release._write_build_version(root, "0.9.0", 1018)
+
+            root_version = json.loads((root / "version.json").read_text(encoding="utf-8"))
+            asset_version = json.loads((root / "app/src/main/assets/version.json").read_text(encoding="utf-8"))
+            self.assertEqual(root_version, asset_version)
+            self.assertEqual(("0.9.0", 1018, "alarm-123"),
+                             (root_version["version"], root_version["version_code"], root_version["app_id"]))
+
     def test_public_asset_download_rejects_arbitrary_hosts_and_paths(self):
         for url in ("http://github.com/o/r/releases/download/t/a.apk",
                     "https://example.test/o/r/releases/download/t/a.apk",
