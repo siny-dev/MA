@@ -386,7 +386,7 @@ def _require_version_code_advance(version_code: int, stable_code: int) -> None:
         raise ReleaseError(f"versionCode {version_code} must be higher than the stable versionCode {stable_code}.")
 
 
-def _source_version_name(project: Path, source_ref: str) -> str:
+def _source_version_details(project: Path, source_ref: str) -> tuple[str, int]:
     if not SOURCE_REF_RE.fullmatch(source_ref):
         raise ReleaseError("Rollback source must be a Git commit, tag, or branch name without option syntax.")
     try:
@@ -397,11 +397,23 @@ def _source_version_name(project: Path, source_ref: str) -> str:
     if raw.returncode:
         raise ReleaseError("Rollback source has no version.json; select a valid app source commit or tag.")
     try:
-        version = json.loads(raw.stdout.decode("utf-8"))["version"]
-        version, _ = validate_version(str(version), 1)
+        source = json.loads(raw.stdout.decode("utf-8"))
+        version, _ = validate_version(str(source["version"]), 1)
+        source_code = source.get("version_code", 0)
+        if type(source_code) is not int or source_code < 0:
+            source_code = 0
     except (UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise ReleaseError("Rollback source version.json contains an invalid version name.") from exc
-    return version
+    return version, source_code
+
+
+def _project_version_code(project: Path) -> int:
+    try:
+        data = json.loads((project / "version.json").read_text(encoding="utf-8"))
+        code = data.get("version_code", 0)
+        return code if type(code) is int and code > 0 else 0
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return 0
 
 
 def _rollback_candidate(project: Path, source_ref: str) -> tuple[str, str, int]:
@@ -414,8 +426,8 @@ def _rollback_candidate(project: Path, source_ref: str) -> tuple[str, str, int]:
     _, stable_code = _stable_version(project, app_id, package)
     if stable_code >= 2_100_000_000:
         raise ReleaseError("Android versionCode limit reached; a rollback update cannot be created.")
-    version_name = _source_version_name(project, source_ref)
-    version_code = stable_code + 1
+    version_name, _ = _source_version_details(project, source_ref)
+    version_code = max(stable_code, _project_version_code(project)) + 1
     candidate_url = _candidate(project, version_name, version_code, source_ref)
     return candidate_url, version_name, version_code
 
@@ -466,6 +478,8 @@ def _candidate(project: Path, version_name: str, version_code: int, source_ref: 
     update_owner, update_repo, _, _ = update_target(mapping, app_id)
     _, stable_code = _stable_version(mapping, app_id, str(app["application_id"]))
     _require_version_code_advance(version_code, stable_code)
+    if source_ref is None and version_code < _project_version_code(project):
+        raise ReleaseError("versionCode must not be lower than this project's current versionCode.")
     ref = source_ref or base_commit
     tag = candidate_tag(version_name, version_code, app_id)
     token = _github_token()
@@ -485,6 +499,13 @@ def _candidate(project: Path, version_name: str, version_code: int, source_ref: 
         asset_name = f"{mapping['repository_name']}-{version_name}-{version_code}.apk"
         metadata = build_release_metadata(str(app["app_id"]), str(app["application_id"]),
                                           version_name, version_code, asset_name, digest)
+        if source_ref is not None:
+            source_name, source_code = _source_version_details(project, source_ref)
+            metadata["rollback_source"] = {
+                "ref": source_ref,
+                "version": source_name,
+                "source_version_code": source_code,
+            }
         request_data = {"tag_name": tag, "target_commitish": "main", "name": tag,
                         "body": "Basic Tool signed Android candidate. Promote to stable only after device verification.",
                         "draft": True, "prerelease": True}
@@ -554,6 +575,81 @@ def _promote(project: Path, tag: str) -> str:
     new_feed = dict(current_feed)
     new_feed.update({"version": version_name, "version_code": version_code,
                      "apk_url": apk_url, "sha256": digest, "release_tag": tag})
+    rollback_versions = current_feed.get("rollback_versions", [])
+    if isinstance(rollback_versions, list):
+        new_feed["rollback_versions"] = [item for item in rollback_versions
+                                         if isinstance(item, dict)
+                                         and _positive_int(item.get("version_code"), 0) > version_code]
+    return _publish_stable_feed(mapping, app_id, new_feed, token)
+
+
+def _positive_int(value: Any, default: int = 0) -> int:
+    return value if type(value) is int and value > 0 else default
+
+
+def _register_rollback(project: Path, tag: str) -> str:
+    app, mapping, _, _ = _load_identity(project)
+    _assert_publishable_tree(project)
+    app_id = str(app["app_id"])
+    package = str(app["application_id"])
+    current_feed, stable_code = _stable_version(mapping, app_id, package)
+    owner, repo, _, _ = update_target(mapping, app_id)
+    if not re.fullmatch(r"candidate-" + re.escape(app_id) + r"-v[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}-[1-9][0-9]*", tag):
+        raise ReleaseError("Select an MA rollback candidate tag.")
+    token = _github_token()
+    api = f"https://api.github.com/repos/{owner}/{repo}"
+    release = _api("GET", api + "/releases/tags/" + urllib.parse.quote(tag, safe=""), token)
+    if not isinstance(release, dict) or release.get("draft") or not release.get("prerelease"):
+        raise ReleaseError("Rollback registration accepts only a published candidate prerelease.")
+    assets = release.get("assets", [])
+    metadata_asset = next((asset for asset in assets if asset.get("name") == "release-metadata.json"), None)
+    if not metadata_asset:
+        raise ReleaseError("Rollback candidate has no release-metadata.json asset.")
+    prefix = f"https://github.com/{owner}/{repo}/releases/download/{tag}/"
+    metadata_url = str(metadata_asset.get("browser_download_url", ""))
+    if metadata_url != prefix + "release-metadata.json":
+        raise ReleaseError("Rollback candidate metadata URL does not match the selected release.")
+    try:
+        metadata = json.loads(_download_public_asset(metadata_url).decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ReleaseError("Rollback candidate metadata is invalid.") from exc
+    if metadata.get("schema") != 1 or metadata.get("app_id") != app_id or metadata.get("package_name") != package:
+        raise ReleaseError("Rollback candidate belongs to another app or package.")
+    source = metadata.get("rollback_source")
+    if not isinstance(source, dict) or not SOURCE_REF_RE.fullmatch(str(source.get("ref", ""))):
+        raise ReleaseError("Candidate was not built from an identified historical app source.")
+    source_version, _ = validate_version(str(source.get("version", "")), 1)
+    source_code = source.get("source_version_code", 0)
+    if type(source_code) is not int or source_code < 0:
+        raise ReleaseError("Rollback source versionCode is invalid.")
+    version_name, version_code = validate_version(str(metadata.get("version", "")), metadata.get("version_code"))
+    if tag != candidate_tag(version_name, version_code, app_id) or version_code <= stable_code:
+        raise ReleaseError("Rollback candidate tag or install versionCode is invalid.")
+    apk_name = str(metadata.get("apk_name", ""))
+    apk_asset = next((asset for asset in assets if asset.get("name") == apk_name), None)
+    apk_url = str(apk_asset.get("browser_download_url", "")) if apk_asset else ""
+    if not apk_name.endswith(".apk") or apk_url != prefix + urllib.parse.quote(apk_name, safe=""):
+        raise ReleaseError("Rollback candidate APK URL does not match its release asset.")
+    apk_payload = _download_public_asset(apk_url)
+    digest = hashlib.sha256(apk_payload).hexdigest()
+    if digest != metadata.get("sha256"):
+        raise ReleaseError("Rollback candidate APK SHA-256 does not match its release metadata.")
+    with tempfile.TemporaryDirectory(prefix="siny-mobile-rollback-register-") as temp_name:
+        apk = Path(temp_name) / "rollback.apk"
+        apk.write_bytes(apk_payload)
+        _verify_apk(apk, package, version_code)
+    entries = current_feed.get("rollback_versions", [])
+    if not isinstance(entries, list):
+        entries = []
+    retained = [item for item in entries if isinstance(item, dict)
+                and _positive_int(item.get("version_code"), 0) > stable_code
+                and item.get("release_tag") != tag]
+    retained.append({"version": source_version, "source_version_code": source_code,
+                     "version_code": version_code, "apk_url": apk_url,
+                     "sha256": digest, "release_tag": tag})
+    retained.sort(key=lambda item: _positive_int(item.get("source_version_code"), 0), reverse=True)
+    new_feed = dict(current_feed)
+    new_feed["rollback_versions"] = retained
     return _publish_stable_feed(mapping, app_id, new_feed, token)
 
 
@@ -568,6 +664,8 @@ def main(argv: list[str] | None = None) -> int:
     rollback.add_argument("source_ref", help="old app commit or tag to rebuild")
     promote = sub.add_parser("promote", help="verify an uploaded candidate and publish it to the stable update feed")
     promote.add_argument("tag")
+    register_rollback = sub.add_parser("register-rollback", help="add a verified historical-source candidate to the app's rollback list")
+    register_rollback.add_argument("tag")
     args = parser.parse_args(argv)
     try:
         project = ROOT.resolve()
@@ -576,6 +674,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "rollback":
             url, version_name, version_code = _rollback_candidate(project, args.source_ref)
             result = f"{url}\nRollback candidate: {version_name} (versionCode {version_code}); stable feed unchanged."
+        elif args.command == "register-rollback":
+            result = _register_rollback(project, args.tag)
         else:
             result = _promote(project, args.tag)
         print(result)

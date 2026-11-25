@@ -1,6 +1,17 @@
 # MA
 
-Android 앱은 v1.0.0 (versionCode 1)으로 시작합니다. AutoUpdate 1.0.20과 AutoSync 0.1.12를 module-lock.json으로 고정하고, 각 앱의 app ID와 Android application ID를 생성합니다. 새로 만드는 앱은 별도의 시작 버전 1.0.0 / versionCode 1로 초기화됩니다.
+MA is an Android voice assistant for finding a requested place and handing the confirmed destination to NAVER Maps for public-transit directions. The current local development candidate is 1.0.031 (versionCode 1016); app ID, package name, and signing identity remain unchanged for compatible updates.
+
+## Current destination flow
+
+- Hold **말하기** to record; releasing it stops microphone capture immediately.
+- NAVER CLOVA Speech Recognition transcribes the clip, HyperCLOVA X interprets the request, and NAVER API HUB local search supplies real place names, addresses, and coordinates.
+- Natural follow-ups such as adding a district, specialty, or “specialist” requirement keep the active request context and trigger a new NAVER search.
+- MA asks one place-confirmation question. A rejection clears that candidate; it does not repeat the same question.
+- After an affirmative answer, MA opens the NAVER Maps public-transit route using the selected NAVER coordinates.
+- The small taxi button opens Kakao T. Automated taxi request confirmation is not part of this transit-first candidate.
+
+The three API credentials are entered once in MA Settings and encrypted using the device's Android Keystore. They are not included in APK assets.
 
 ## 새 앱 저장소 생성
 

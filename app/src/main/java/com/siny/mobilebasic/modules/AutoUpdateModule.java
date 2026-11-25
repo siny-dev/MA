@@ -13,6 +13,8 @@ import android.provider.Settings;
 
 import com.siny.mobilebasic.AppIdentity;
 
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -62,23 +64,73 @@ public final class AutoUpdateModule {
             String versionName=manifest.getString("version"),apkUrl=manifest.getString("apk_url"),sha=manifest.getString("sha256").toLowerCase(Locale.ROOT);
             if(schema!=1||version<=0||versionName.trim().isEmpty()||!"android".equals(manifest.optString("platform"))||!AppIdentity.APP_ID.equals(appId)||!context.getPackageName().equals(packageName))return new Result("blocked","업데이트 앱 식별자가 일치하지 않습니다.",0L);
             if(version<=installedVersionCode())return new Result("up-to-date","최신 버전입니다.",version,versionName);
-            if(!sha.matches("[0-9a-f]{64}"))return new Result("blocked","업데이트 SHA-256 형식이 올바르지 않습니다.",version);
-            validateUrl(apkUrl,isDebuggable());
-            File directory=new File(context.getNoBackupFilesDir(),"autoupdate/"+AppIdentity.APP_ID);
-            if(!directory.exists()&&!directory.mkdirs())return new Result("error","업데이트 임시 폴더를 만들지 못했습니다.",version);
-            File target=new File(directory,"update-"+version+".apk");temporary=new File(directory,"update-"+version+".part");
-            if(temporary.exists()&&!temporary.delete())return new Result("error","이전 다운로드 임시 파일을 정리하지 못했습니다.",version);
-            download(apkUrl,temporary);
-            if(temporary.length()<=0||temporary.length()>MAX_APK_BYTES)throw new IOException("Update package size is outside the allowed range");
-            if(!sha256(temporary).equals(sha))throw new SecurityException("Update package SHA-256 does not match the manifest");
-            verifyApk(temporary,version);
-            replaceAtomically(temporary,target);temporary=null;
-            settings.setPendingUpdate(target.getAbsolutePath(),version);
-            return new Result("update-ready","업데이트 파일을 검증했습니다. 적용 버튼을 눌러 설치를 승인하세요.",version,versionName);
+            return downloadAndPrepare(version,versionName,apkUrl,sha,"update");
         }catch(Exception e){
             if(temporary!=null&&temporary.exists())temporary.delete();
             return new Result("error",safeMessage(e),0L);
         }
+    }
+
+    public RollbackCatalog getRollbackCatalog() throws IOException, JSONException, PackageManager.NameNotFoundException {
+        String manifestUrl=settings.updateManifestUrl().trim();
+        if(manifestUrl.isEmpty())throw new IOException("Update manifest is not configured");
+        validateUrl(manifestUrl,isDebuggable());
+        JSONObject manifest=new JSONObject(readUrl(manifestUrl,MAX_MANIFEST_BYTES));
+        if(manifest.optLong("schema")!=1||!"android".equals(manifest.optString("platform"))
+                ||!AppIdentity.APP_ID.equals(manifest.optString("app_id"))
+                ||!context.getPackageName().equals(manifest.optString("package_name")))
+            throw new IOException("Update manifest identity does not match this app");
+        String stableName=manifest.optString("version","");
+        long stableCode=manifest.optLong("version_code",0L);
+        JSONArray items=manifest.optJSONArray("rollback_versions");
+        java.util.ArrayList<RollbackVersion> versions=new java.util.ArrayList<>();
+        if(items!=null){
+            long installed=installedVersionCode();
+            for(int i=0;i<items.length();i++){
+                JSONObject item=items.optJSONObject(i);if(item==null)continue;
+                String name=item.optString("version","").trim();
+                long sourceCode=item.optLong("source_version_code",0L);
+                long installCode=item.optLong("version_code",0L);
+                String apk=item.optString("apk_url","").trim();
+                String digest=item.optString("sha256","").toLowerCase(Locale.ROOT);
+                if(name.isEmpty()||sourceCode<0||installCode<installed||!digest.matches("[0-9a-f]{64}"))continue;
+                try{validateUrl(apk,isDebuggable());}catch(RuntimeException e){continue;}
+                versions.add(new RollbackVersion(name,sourceCode,installCode,apk,digest));
+            }
+        }
+        versions.sort((a,b)->Long.compare(b.sourceVersionCode,a.sourceVersionCode));
+        return new RollbackCatalog(stableName,stableCode,versions);
+    }
+
+    public Result checkAndDownloadRollback(RollbackVersion version){
+        synchronized(UPDATE_LOCK){
+            if(version==null)return new Result("blocked","롤백 버전을 확인할 수 없습니다.",0L);
+            try{
+                if(version.installVersionCode<installedVersionCode())
+                    return new Result("blocked","이 복구 파일은 현재 설치 버전보다 낮아 적용할 수 없습니다.",version.installVersionCode,version.versionName);
+                validateUrl(version.apkUrl,isDebuggable());
+                return downloadAndPrepare(version.installVersionCode,version.versionName,version.apkUrl,version.sha256,"rollback");
+            }catch(Exception e){return new Result("error",safeMessage(e),version.installVersionCode,version.versionName);}
+        }
+    }
+
+    private Result downloadAndPrepare(long version,String versionName,String apkUrl,String sha,String prefix) throws Exception {
+        if(!sha.matches("[0-9a-f]{64}"))return new Result("blocked","업데이트 SHA-256 형식이 올바르지 않습니다.",version,versionName);
+        validateUrl(apkUrl,isDebuggable());
+        File directory=new File(context.getNoBackupFilesDir(),"autoupdate/"+AppIdentity.APP_ID);
+        if(!directory.exists()&&!directory.mkdirs())return new Result("error","업데이트 폴더를 만들지 못했습니다.",version,versionName);
+        File target=new File(directory,prefix+"-"+version+".apk");
+        File temporary=new File(directory,prefix+"-"+version+".part");
+        try{
+            if(temporary.exists()&&!temporary.delete())return new Result("error","이전 임시 파일을 정리하지 못했습니다.",version,versionName);
+            download(apkUrl,temporary);
+            if(temporary.length()<=0||temporary.length()>MAX_APK_BYTES)throw new IOException("Update package size is outside the allowed range");
+            if(!sha256(temporary).equals(sha))throw new SecurityException("Update package SHA-256 does not match the manifest");
+            verifyApk(temporary,version,"rollback".equals(prefix));
+            replaceAtomically(temporary,target);
+            settings.setPendingUpdate(target.getAbsolutePath(),version);
+            return new Result("update-ready",("rollback".equals(prefix)?"안정 버전 파일을 확인했습니다.":"새 버전을 확인했습니다."),version,versionName);
+        }catch(Exception e){if(temporary.exists())temporary.delete();throw e;}
     }
 
     private static void replaceAtomically(File source,File target) throws IOException{
@@ -110,13 +162,17 @@ public final class AutoUpdateModule {
             File allowedRoot=new File(context.getNoBackupFilesDir(),"autoupdate/"+AppIdentity.APP_ID).getCanonicalFile();
             if(!allowedRoot.equals(apk.getParentFile())||!apk.isFile()||apk.length()<=0||apk.length()>MAX_APK_BYTES)throw new IOException("Verified update package is unavailable");
             if(Build.VERSION.SDK_INT>=26&&!context.getPackageManager().canRequestPackageInstalls()){
-                Intent permission=new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+context.getPackageName()));
-                activity.startActivity(permission);
-                return new Result("needs-permission","이 앱의 알 수 없는 앱 설치 권한을 허용한 뒤 다시 적용하세요.",settings.pendingUpdateVersionCode());
+                if(activity!=null){
+                    Intent permission=new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+context.getPackageName()));
+                    activity.startActivity(permission);
+                    settings.markPendingUpdateAwaitingPermission();
+                }
+                return new Result("needs-permission","업데이트 설치 권한이 필요합니다.",settings.pendingUpdateVersionCode());
             }
             PackageInstaller installer=context.getPackageManager().getPackageInstaller();
             PackageInstaller.SessionParams params=new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
             params.setAppPackageName(context.getPackageName());params.setSize(apk.length());
+            if(Build.VERSION.SDK_INT>=31)params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
             int sessionId=installer.createSession(params);
             try(PackageInstaller.Session session=installer.openSession(sessionId);FileInputStream input=new FileInputStream(apk);OutputStream output=session.openWrite("mobile-update.apk",0,apk.length())){
                 byte[] buffer=new byte[64*1024];int n;while((n=input.read(buffer))!=-1)output.write(buffer,0,n);session.fsync(output);
@@ -125,7 +181,8 @@ public final class AutoUpdateModule {
                 PendingIntent callback=PendingIntent.getActivity(context,sessionId,resultIntent,flags);
                 session.commit(callback.getIntentSender());
             }catch(Exception e){installer.abandonSession(sessionId);throw e;}
-            return new Result("install-started","Android 설치 화면에서 업데이트를 확인하세요.",settings.pendingUpdateVersionCode());
+            settings.markPendingUpdateInstallAttempted();
+            return new Result("install-started","업데이트 설치를 시작했습니다.",settings.pendingUpdateVersionCode());
         }catch(Exception e){return new Result("error",safeMessage(e),settings.pendingUpdateVersionCode());}
     }
 
@@ -139,16 +196,21 @@ public final class AutoUpdateModule {
     }
 
     private void verifyApk(File file,long expectedVersion) throws Exception{
+        verifyApk(file,expectedVersion,false);
+    }
+
+    private void verifyApk(File file,long expectedVersion,boolean allowSameVersion) throws Exception{
         PackageManager pm=context.getPackageManager();
         int flags=Build.VERSION.SDK_INT>=28?PackageManager.GET_SIGNING_CERTIFICATES:PackageManager.GET_SIGNATURES;
         PackageInfo candidate=pm.getPackageArchiveInfo(file.getAbsolutePath(),flags);
-        PackageInfo installed=pm.getPackageInfo(context.getPackageName(),flags);
+        PackageInfo installedInfo=pm.getPackageInfo(context.getPackageName(),flags);
         if(candidate==null||!context.getPackageName().equals(candidate.packageName))throw new SecurityException("APK package name does not match this app");
         long candidateVersion=Build.VERSION.SDK_INT>=28?candidate.getLongVersionCode():candidate.versionCode;
-        if(candidateVersion!=expectedVersion||candidateVersion<=installedVersionCode())throw new SecurityException("APK version code is invalid");
+        long installed=installedVersionCode();
+        if(candidateVersion!=expectedVersion||(allowSameVersion?candidateVersion<installed:candidateVersion<=installed))throw new SecurityException("APK version code is invalid");
         if(Build.VERSION.SDK_INT>=28){
-            if(candidate.signingInfo==null||installed.signingInfo==null||!sameSigners(candidate.signingInfo.getApkContentsSigners(),installed.signingInfo.getApkContentsSigners()))throw new SecurityException("APK signing certificate does not match the installed app");
-        }else if(candidate.signatures==null||installed.signatures==null||!sameSigners(candidate.signatures,installed.signatures))throw new SecurityException("APK signing certificate does not match the installed app");
+            if(candidate.signingInfo==null||installedInfo.signingInfo==null||!sameSigners(candidate.signingInfo.getApkContentsSigners(),installedInfo.signingInfo.getApkContentsSigners()))throw new SecurityException("APK signing certificate does not match the installed app");
+        }else if(candidate.signatures==null||installedInfo.signatures==null||!sameSigners(candidate.signatures,installedInfo.signatures))throw new SecurityException("APK signing certificate does not match the installed app");
     }
 
     private static boolean sameSigners(android.content.pm.Signature[] a,android.content.pm.Signature[] b){
@@ -233,4 +295,12 @@ public final class AutoUpdateModule {
     }
 
     public static final class Result{public final String status,message,versionName;public final long versionCode;Result(String s,String m,long v){this(s,m,v,"");}Result(String s,String m,long v,String name){status=s;message=m;versionCode=v;versionName=name==null?"":name;}}
+    public static final class RollbackCatalog {
+        public final String stableVersion; public final long stableVersionCode; public final java.util.List<RollbackVersion> versions;
+        RollbackCatalog(String name,long code,java.util.List<RollbackVersion> items){stableVersion=name;stableVersionCode=code;versions=java.util.Collections.unmodifiableList(items);}
+    }
+    public static final class RollbackVersion {
+        public final String versionName,apkUrl,sha256; public final long sourceVersionCode,installVersionCode;
+        RollbackVersion(String name,long sourceCode,long installCode,String url,String digest){versionName=name;sourceVersionCode=sourceCode;installVersionCode=installCode;apkUrl=url;sha256=digest;}
+    }
 }

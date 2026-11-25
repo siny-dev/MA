@@ -1,5 +1,42 @@
 # MA change log
 
+## 1.0.032 development candidate (2026-11-25)
+
+- Start verified Android updates automatically after download on launch and while MA is open; keep the Android installer confirmation when the OS requires it.
+- Rename the settings action to “최신 버전 확인” and remove the separate in-app install button.
+- Add a rollback-version picker backed by validated `rollback_versions` entries in the stable feed.
+- Add release tooling to register verified historical-source candidates in the rollback list and discard entries superseded by a newer stable version.
+
+This is a local development candidate. It has not been published to the MA update feed.
+
+## 1.0.031 development candidate (2026-11-25)
+
+- Convert NAVER Local Search WGS84 coordinates from its documented integer 10⁻⁷-degree representation before range validation and Naver Maps handoff.
+
+This is a local development candidate. It has not been published to the MA update feed.
+
+## 1.0.030 development candidate (2026-11-25)
+
+- Speak only the recognized neighborhood and place name for a destination confirmation while showing the full NAVER address on screen.
+- Let HyperCLOVA interpret natural yes/no/correction phrases at the confirmation turn, while only the app can open an already verified route.
+- Prevent AI ranking from confirming NAVER places whose verified category or requested administrative area does not match; require a real neighborhood for nearby/general clinic searches and do not infer physician specialist credentials from Local Search metadata.
+- Expire an unanswered destination confirmation after two minutes, support natural affirmative directions, stop capture on touch cancellation or app pause, and show concise voice choices with full addresses on screen.
+- Clear an unsuccessful search before the next destination request so a failed query cannot silently contaminate a new request.
+
+This is a local development candidate. It has not been published to the MA update feed.
+
+## 1.0.029 development candidate (2026-11-25)
+
+- Replaced the generic shell screen with the MA home layout: MA title, Mother’s Assistant subtitle, settings gear, large press-and-hold microphone, and a small taxi entry point.
+- Added bounded 16 kHz audio capture that records only while the microphone is held, sends the clip to NAVER CLOVA CSR, and uses HyperCLOVA X to interpret the request and rank only real NAVER Local Search results.
+- Added one verified-place confirmation before opening the NAVER Maps public-transit route scheme. A rejection clears the candidate; corrections start a fresh search, and unclear confirmation can be repeated only once.
+- Added per-device Android Keystore encryption for CLOVA Studio and NAVER API HUB credentials, without putting keys in APK assets.
+- Kept location/category context when the user adds a natural follow-up, and stop microphone capture immediately when the user releases the button.
+- Adjusted the MA header alignment, microphone size, and taxi shortcut to follow the supplied screen reference more closely.
+- Added regression coverage for positive/negative confirmation, destination corrections, ambiguous replies, voice selection, coordinate validation, and NAVER public-transit route links.
+
+This is a local development candidate. It has not been published to the MA update feed.
+
 ## 1.0.027 baseline (2026-11-21)
 
 - Recreated the MA app from the Mobile Basic Tool while retaining app ID, Android package, existing signer fingerprint, versionName, and versionCode so the installed app can receive a compatible update.

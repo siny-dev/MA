@@ -59,7 +59,7 @@ class ReleaseBuildSmokeTests(unittest.TestCase):
             badging = subprocess.run([str(BUILD_TOOLS / "aapt.exe"), "dump", "badging", str(apk)],
                                      capture_output=True, text=True, encoding="utf-8", errors="replace",
                                      check=True, timeout=60).stdout
-            self.assertIn("package: name='com.siny.mobilebasic' versionCode='7' versionName='1.0.7'", badging)
+            self.assertIn("package: name='com.siny.apps.ma_3c44c3e1b8' versionCode='7' versionName='1.0.7'", badging)
 
 
 if __name__ == "__main__":

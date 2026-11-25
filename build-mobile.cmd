@@ -8,6 +8,9 @@ set "GRADLE_USER_HOME=%TOOLCHAIN%\gradle-home"
 set "PATH=%JAVA_HOME%\bin;%ANDROID_HOME%\platform-tools;%PATH%"
 set "STAGE_BASE=%TOOLCHAIN%\build-staging"
 set "TASK=%~1"
+set "INSTRUMENTATION_ARGS="
+if defined LOCAL_UPDATE_MANIFEST_URL set "INSTRUMENTATION_ARGS=%INSTRUMENTATION_ARGS% -Pandroid.testInstrumentationRunnerArguments.localUpdateManifestUrl=%LOCAL_UPDATE_MANIFEST_URL%"
+if defined LOCAL_UPDATE_VERSION_CODE set "INSTRUMENTATION_ARGS=%INSTRUMENTATION_ARGS% -Pandroid.testInstrumentationRunnerArguments.localUpdateVersionCode=%LOCAL_UPDATE_VERSION_CODE%"
 if not defined TASK set "TASK=all"
 if /I not "%TASK%"=="all" if /I not "%TASK%"=="test" if /I not "%TASK%"=="instrumented" if /I not "%TASK%"=="debug" if /I not "%TASK%"=="release" goto usage
 if not exist "%JAVA_HOME%\bin\java.exe" goto toolchain_missing
@@ -29,7 +32,7 @@ echo sdk.dir=%ANDROID_SDK_LOCAL%>"%STAGE%\local.properties"
 pushd "%STAGE%"
 if errorlevel 1 goto stage_failed
 if /I "%TASK%"=="test" call gradlew.bat clean testDebugUnitTest --no-daemon
-if /I "%TASK%"=="instrumented" call gradlew.bat clean connectedDebugAndroidTest --no-daemon
+if /I "%TASK%"=="instrumented" call gradlew.bat clean connectedDebugAndroidTest %INSTRUMENTATION_ARGS% --no-daemon
 if /I "%TASK%"=="debug" call gradlew.bat assembleDebug --no-daemon
 if /I "%TASK%"=="all" call gradlew.bat clean testDebugUnitTest assembleDebug --no-daemon
 if /I "%TASK%"=="release" call gradlew.bat clean testDebugUnitTest assembleRelease --no-daemon
