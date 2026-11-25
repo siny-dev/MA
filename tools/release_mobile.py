@@ -464,6 +464,10 @@ def _build_environment(app_id: str, version_name: str, version_code: int) -> dic
         "ANDROID_KEYSTORE_PASSWORD": password,
         "ANDROID_KEY_ALIAS": alias,
         "ANDROID_KEY_PASSWORD": password,
+        "MA_LEGACY_KEYSTORE": str(key),
+        "MA_LEGACY_KEY_ALIAS": alias,
+        "MA_LEGACY_STORE_PASSWORD": password,
+        "MA_LEGACY_KEY_PASSWORD": password,
     })
     env["PATH"] = str(Path(env["JAVA_HOME"]) / "bin") + os.pathsep + str(TOOLCHAIN / "android-sdk" / "platform-tools") + os.pathsep + env.get("PATH", "")
     return env
