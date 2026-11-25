@@ -1,5 +1,11 @@
 # MA change log
 
+## 1.0.034 (2026-11-25)
+
+- Close the APK input and PackageInstaller session output before committing the install session. Android rejects `commit()` with `Files still open` otherwise, so the downloaded update never reached installation.
+- Report Android installer rejection separately from APK SHA/signature verification failures.
+- Add an Android 14 emulator test that downloads a signed-equivalent next build, commits it without user action, and checks the installed version code.
+
 ## 1.0.033 (2026-11-25)
 
 - Declare Android's normal `UPDATE_PACKAGES_WITHOUT_USER_ACTION` permission so eligible self-updates can install without a repeated system approval after this bootstrap update is installed.

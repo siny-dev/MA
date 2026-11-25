@@ -67,6 +67,26 @@ public final class AutoUpdateLocalFeedTest {
                 context.checkSelfPermission(Manifest.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION));
     }
 
+    @Test public void selfUpdateInstallsWithoutUserActionWhenAndroidRequirementsAreMet() throws Exception {
+        assumeTrue("Refusing to replace a pending real update.", settings.pendingUpdatePath().isEmpty());
+        Bundle arguments = InstrumentationRegistry.getArguments();
+        String manifestUrl = arguments.getString("localUpdateManifestUrl", "");
+        long expectedCode = Long.parseLong(arguments.getString("localUpdateVersionCode", "1021"));
+        assertTrue("The local test feed URL was not supplied.", manifestUrl.startsWith("http://127.0.0.1:"));
+        settings.save(previousServer, previousToken, manifestUrl);
+
+        AutoUpdateModule.Result downloaded = updater.checkAndDownload();
+        ownsTestPendingUpdate = !settings.pendingUpdatePath().isEmpty();
+        assertEquals("Test update download failed: " + downloaded.message, "update-ready", downloaded.status);
+        assertEquals(expectedCode, downloaded.versionCode);
+
+        AutoUpdateModule.Result install = updater.installPending(null);
+        assertEquals("PackageInstaller did not begin self-update: " + install.message,
+                "install-started", install.status);
+        // The host-side emulator harness verifies the installed version. Android may replace
+        // the app process as soon as a silent self-update commits, stopping instrumentation.
+    }
+
     @Test public void mismatchedShaIsRejectedWithoutStagingAnUpdate() {
         assumeTrue("Refusing to replace a pending real update.", settings.pendingUpdatePath().isEmpty());
         Bundle arguments = InstrumentationRegistry.getArguments();

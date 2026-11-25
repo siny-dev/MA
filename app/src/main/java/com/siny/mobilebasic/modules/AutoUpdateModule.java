@@ -174,8 +174,10 @@ public final class AutoUpdateModule {
             params.setAppPackageName(context.getPackageName());params.setSize(apk.length());
             if(Build.VERSION.SDK_INT>=31)params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
             int sessionId=installer.createSession(params);
-            try(PackageInstaller.Session session=installer.openSession(sessionId);FileInputStream input=new FileInputStream(apk);OutputStream output=session.openWrite("mobile-update.apk",0,apk.length())){
-                byte[] buffer=new byte[64*1024];int n;while((n=input.read(buffer))!=-1)output.write(buffer,0,n);session.fsync(output);
+            try(PackageInstaller.Session session=installer.openSession(sessionId)){
+                try(FileInputStream input=new FileInputStream(apk);OutputStream output=session.openWrite("mobile-update.apk",0,apk.length())){
+                    byte[] buffer=new byte[64*1024];int n;while((n=input.read(buffer))!=-1)output.write(buffer,0,n);session.fsync(output);
+                }
                 Intent resultIntent=new Intent(context,UpdateStatusActivity.class).setAction(UpdateStatusActivity.ACTION_INSTALL_RESULT).putExtra(PackageInstaller.EXTRA_SESSION_ID,sessionId);
                 int flags=PendingIntent.FLAG_UPDATE_CURRENT;if(Build.VERSION.SDK_INT>=31)flags|=PendingIntent.FLAG_MUTABLE;
                 PendingIntent callback=PendingIntent.getActivity(context,sessionId,resultIntent,flags);
@@ -183,7 +185,16 @@ public final class AutoUpdateModule {
             }catch(Exception e){installer.abandonSession(sessionId);throw e;}
             settings.markPendingUpdateInstallAttempted();
             return new Result("install-started","업데이트 설치를 시작했습니다.",settings.pendingUpdateVersionCode());
-        }catch(Exception e){return new Result("error",safeMessage(e),settings.pendingUpdateVersionCode());}
+        }catch(Exception e){android.util.Log.e("MAAutoUpdate","PackageInstaller self-update failed",e);return new Result("error",safeInstallMessage(e),settings.pendingUpdateVersionCode());}
+    }
+
+    private static String safeInstallMessage(Exception error){
+        String detail=error.getMessage()==null?"":error.getMessage().toLowerCase(Locale.ROOT);
+        if(error instanceof SecurityException && detail.contains("files still open"))
+            return "Android 업데이트 세션을 준비하지 못했습니다. 다시 시도해 주세요.";
+        if(error instanceof SecurityException)
+            return "Android가 자동 설치를 허용하지 않아 설치 확인이 필요합니다.";
+        return "Android 업데이트 설치를 시작하지 못했습니다. 다시 시도해 주세요.";
     }
 
     public static boolean isSecureUrl(String value,boolean debugBuild){
