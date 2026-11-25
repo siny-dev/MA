@@ -488,10 +488,13 @@ def _candidate(project: Path, version_name: str, version_code: int, source_ref: 
     with tempfile.TemporaryDirectory(prefix="siny-mobile-release-") as temp_name:
         build_root = Path(temp_name) / "project"
         _extract_archive(project, ref, build_root)
-        env = _build_environment(str(app["app_id"]), version_name, version_code)
         build_script = build_root / "build-mobile.cmd"
         if not build_script.is_file():
-            raise ReleaseError("Generated app does not contain the isolated Android build command.")
+            shared_builder = project / "build-mobile.cmd"
+            if not shared_builder.is_file():
+                raise ReleaseError("Shared isolated Android build command is missing.")
+            shutil.copy2(shared_builder, build_script)
+        env = _build_environment(str(app["app_id"]), version_name, version_code)
         command = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", str(build_script), "release"]
         _run(command, cwd=build_root, env=env)
         apk = build_root / "app" / "build" / "outputs" / "apk" / "release" / "app-release.apk"
