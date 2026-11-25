@@ -1,6 +1,8 @@
 package com.siny.mobilebasic.modules;
 
 import android.content.Context;
+import android.content.pm.PackageManager;
+import android.Manifest;
 import android.os.Bundle;
 
 import com.siny.mobilebasic.AppIdentity;
@@ -48,7 +50,7 @@ public final class AutoUpdateLocalFeedTest {
         assumeTrue("Refusing to replace a pending real update.", settings.pendingUpdatePath().isEmpty());
         Bundle arguments = InstrumentationRegistry.getArguments();
         String manifestUrl = arguments.getString("localUpdateManifestUrl", "");
-        String expectedCode = arguments.getString("localUpdateVersionCode", "1017");
+        String expectedCode = arguments.getString("localUpdateVersionCode", "1019");
         assertTrue("The local test feed URL was not supplied.", manifestUrl.startsWith("http://127.0.0.1:"));
         settings.save(previousServer, previousToken, manifestUrl);
 
@@ -56,8 +58,13 @@ public final class AutoUpdateLocalFeedTest {
         ownsTestPendingUpdate = !settings.pendingUpdatePath().isEmpty();
         assertEquals("Update download failed: " + result.message, "update-ready", result.status);
         assertEquals(Long.parseLong(expectedCode), result.versionCode);
-        assertEquals("1.0.032", result.versionName);
+        assertEquals("1.0.033", result.versionName);
         assertTrue("The verified update package was not staged.", !settings.pendingUpdatePath().isEmpty());
+    }
+
+    @Test public void appCanRequestSelfUpdateWithoutInstallerConfirmation() {
+        assertEquals(PackageManager.PERMISSION_GRANTED,
+                context.checkSelfPermission(Manifest.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION));
     }
 
     @Test public void mismatchedShaIsRejectedWithoutStagingAnUpdate() {

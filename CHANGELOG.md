@@ -1,13 +1,18 @@
 # MA change log
 
-## 1.0.032 development candidate (2026-11-25)
+## 1.0.033 (2026-11-25)
+
+- Declare Android's normal `UPDATE_PACKAGES_WITHOUT_USER_ACTION` permission so eligible self-updates can install without a repeated system approval after this bootstrap update is installed.
+- Keep the verified PackageInstaller fallback for Android/device cases that still request user action.
+
+## 1.0.032 prior stable release (2026-11-25)
 
 - Start verified Android updates automatically after download on launch and while MA is open; keep the Android installer confirmation when the OS requires it.
 - Rename the settings action to “최신 버전 확인” and remove the separate in-app install button.
 - Add a rollback-version picker backed by validated `rollback_versions` entries in the stable feed.
 - Add release tooling to register verified historical-source candidates in the rollback list and discard entries superseded by a newer stable version.
 
-This is a local development candidate. It has not been published to the MA update feed.
+This release was superseded by 1.0.033 after the first update prompt exposed the missing Android self-update permission.
 
 ## 1.0.031 development candidate (2026-11-25)
 
